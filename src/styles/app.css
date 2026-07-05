@@ -84,6 +84,21 @@ button:disabled {
   text-align: center;
 }
 
+.menu__brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.menu__icon {
+  width: 132px;
+  height: 132px;
+  border-radius: 24px;
+  object-fit: cover;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
+}
+
 .menu__title {
   font-size: 30px;
   font-weight: 800;

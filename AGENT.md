@@ -2,7 +2,7 @@
 
 ## Mission
 
-Build `FWWweb` as a web-first TypeScript port of Words With Real Friends.
+Build `FWWweb` as a web-first TypeScript port of Friends With Words.
 
 The web app is intentionally scoped to one playable mode:
 

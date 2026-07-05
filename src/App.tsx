@@ -26,6 +26,10 @@ const COMBO_EXPLAINED_KEY = "fwwweb.comboExplained.v1";
 const SWAP_TILE_STAGGER_MS = 380;
 const SWAP_COMMIT_EXTRA_MS = 450;
 
+const isJsdom = () =>
+  typeof navigator !== "undefined" &&
+  navigator.userAgent.toLowerCase().includes("jsdom");
+
 interface PendingBlank {
   rackIndex: number;
   row: number;
@@ -74,6 +78,7 @@ export const App = () => {
   const swapTimeoutsRef = useRef<number[]>([]);
   const [pendingBlank, setPendingBlank] = useState<PendingBlank | null>(null);
 
+  const musicRef = useRef<HTMLAudioElement>(null);
   const boardWrapRef = useRef<HTMLDivElement>(null);
 
   // ResizeObserver keeps --cell-size (px) in sync with the board width so
@@ -113,6 +118,12 @@ export const App = () => {
   );
 
   const isActive = state?.status === "active";
+
+  useEffect(() => {
+    if (state?.status === "expired") {
+      pauseMusic();
+    }
+  }, [state?.status]);
 
   const canDropOnCell = useCallback(
     (row: number, col: number): boolean =>
@@ -219,11 +230,13 @@ export const App = () => {
 
   const openPause = () => {
     game.pauseClock();
+    pauseMusic();
     setPaused(true);
   };
 
   const closePause = () => {
     setPaused(false);
+    playMusic();
     game.resumeClock();
   };
 
@@ -231,6 +244,7 @@ export const App = () => {
     setPaused(false);
     cancelSwap();
     setPendingBlank(null);
+    playMusic();
     game.startNewRun();
   };
 
@@ -311,6 +325,7 @@ export const App = () => {
   // ---------- start / menu ----------
 
   const requestStart = () => {
+    playMusic();
     if (!comboExplained()) {
       setShowComboModal(true);
       return;
@@ -321,92 +336,140 @@ export const App = () => {
   const startFromComboModal = () => {
     markComboExplained();
     setShowComboModal(false);
+    playMusic();
     game.startNewRun();
   };
 
   const handlePlayAgain = () => {
     cancelSwap();
     setPendingBlank(null);
+    playMusic();
     game.startNewRun();
+  };
+
+  const resumeSavedRun = () => {
+    playMusic();
+    game.resumeSavedRun();
+  };
+
+  const playMusic = () => {
+    const music = musicRef.current;
+    if (!music || isJsdom()) return;
+
+    music.volume = 0.55;
+    try {
+      const result = music.play();
+      if (result && "catch" in result) {
+        result.catch(() => {
+          /* Browser may block audio until a direct user gesture. */
+        });
+      }
+    } catch {
+      /* jsdom and some browsers can reject media playback synchronously. */
+    }
+  };
+
+  const pauseMusic = () => {
+    if (isJsdom()) return;
+
+    try {
+      musicRef.current?.pause();
+    } catch {
+      /* Ignore media API failures in constrained environments. */
+    }
   };
 
   // ---------- menu screens ----------
 
   if (!state) {
     return (
-      <div className="screen screen--menu">
-        <h1 className="menu__title">Words With Real Friends</h1>
-        <p className="menu__subtitle">5-Minute Rush · 11×11 board</p>
-        {best ? (
-          <p className="menu__best">Best score: {best.breakdown.finalScore}</p>
-        ) : null}
+      <>
+        <audio ref={musicRef} src="/friendswwords.mp3" loop preload="auto" />
+        <div className="screen screen--menu">
+          <div className="menu__brand">
+            <img
+              className="menu__icon"
+              src="/1024.png"
+              alt=""
+              width="1024"
+              height="1024"
+            />
+            <h1 className="menu__title">Friends With Words</h1>
+          </div>
+          <p className="menu__subtitle">5-Minute Rush · 11×11 board</p>
+          {best ? (
+            <p className="menu__best">Best score: {best.breakdown.finalScore}</p>
+          ) : null}
 
-        {!profile || editingName ? (
-          <UsernameForm
-            initialValue={profile?.username ?? ""}
-            onSaved={(saved) => {
-              setProfile(saved);
-              setEditingName(false);
-            }}
-          />
-        ) : (
-          <p className="menu__player">
-            Playing as <strong>{profile.username}</strong>
-            {profile.verified ? "" : " (device-only)"}
-            <button
-              className="menu__change-name"
-              onClick={() => setEditingName(true)}
-            >
-              change
-            </button>
-          </p>
-        )}
+          {!profile || editingName ? (
+            <UsernameForm
+              initialValue={profile?.username ?? ""}
+              onSaved={(saved) => {
+                setProfile(saved);
+                setEditingName(false);
+              }}
+            />
+          ) : (
+            <p className="menu__player">
+              Playing as <strong>{profile.username}</strong>
+              {profile.verified ? "" : " (device-only)"}
+              <button
+                className="menu__change-name"
+                onClick={() => setEditingName(true)}
+              >
+                change
+              </button>
+            </p>
+          )}
 
-        {savedRunAvailable ? (
-          <>
+          {savedRunAvailable ? (
+            <>
+              <button
+                className="btn btn--primary"
+                onClick={resumeSavedRun}
+                disabled={!profile}
+              >
+                Resume Run
+              </button>
+              <button className="btn btn--danger" onClick={game.discardSavedRun}>
+                Discard Saved Run
+              </button>
+            </>
+          ) : (
             <button
               className="btn btn--primary"
-              onClick={game.resumeSavedRun}
-              disabled={!profile}
+              onClick={requestStart}
+              disabled={!dictionaryReady || !profile || editingName}
             >
-              Resume Run
+              {dictionaryReady ? "Start Rush" : "Loading words…"}
             </button>
-            <button className="btn btn--danger" onClick={game.discardSavedRun}>
-              Discard Saved Run
-            </button>
-          </>
-        ) : (
-          <button
-            className="btn btn--primary"
-            onClick={requestStart}
-            disabled={!dictionaryReady || !profile || editingName}
-          >
-            {dictionaryReady ? "Start Rush" : "Loading words…"}
-          </button>
-        )}
+          )}
 
-        {showComboModal ? (
-          <ComboExplainerModal onStart={startFromComboModal} />
-        ) : null}
+          {showComboModal ? (
+            <ComboExplainerModal onStart={startFromComboModal} />
+          ) : null}
 
-        <div className="rotate-overlay">
-          <p>Rotate your phone — Rush plays in portrait.</p>
+          <div className="rotate-overlay">
+            <p>Rotate your phone — Rush plays in portrait.</p>
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 
   // ---------- game screen ----------
 
   return (
-    <div className="screen">
-      <GameHud
-        remainingMs={remainingMs}
-        score={runningScore}
-        tilesRemaining={state.bag.length}
-        comboStreak={state.consistencyStreak}
-        onMenu={openPause}
-      />
+    <>
+      <audio ref={musicRef} src="/friendswwords.mp3" loop preload="auto" />
+      <div className="screen">
+        <GameHud
+          remainingMs={remainingMs}
+          score={runningScore}
+          tilesRemaining={state.bag.length}
+          comboStreak={state.consistencyStreak}
+          onMenu={openPause}
+        />
 
       <BoardViewport
         wrapRef={boardWrapRef}
@@ -595,6 +658,7 @@ export const App = () => {
       <div className="rotate-overlay">
         <p>Rotate your phone — Rush plays in portrait.</p>
       </div>
-    </div>
+      </div>
+    </>
   );
 };
