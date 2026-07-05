@@ -31,6 +31,7 @@ import {
   reorderRack as engineReorderRack,
   replayJournal,
   resolveRackIndex,
+  normalizeRushDurationSeconds,
   returnAllDraftTiles,
   shuffleRack as engineShuffleRack,
   submitTurn as engineSubmitTurn,
@@ -294,7 +295,7 @@ export const useRushGame = (
         finished.journal,
         dictionary,
         finished.startedAtWallMs,
-        { durationSeconds: finished.durationSeconds }
+        { durationSeconds: normalizeRushDurationSeconds(finished.durationSeconds) }
       );
       if (!preflight.ok) {
         setSubmitError(preflight.error ?? "replay_preflight_failed");

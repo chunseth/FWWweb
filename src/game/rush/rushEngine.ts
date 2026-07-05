@@ -75,6 +75,12 @@ export const getRushRunConfig = (
     ? CLASSIC_RUSH_CONFIG
     : MINI_RUSH_CONFIG;
 
+/** Narrow untrusted/persisted duration values to the supported run lengths. */
+export const normalizeRushDurationSeconds = (
+  durationSeconds: number
+): 300 | 600 =>
+  durationSeconds === CLASSIC_RUSH_DURATION_SECONDS ? 600 : 300;
+
 export const getRushDurationMs = (stateOrConfig: {
   durationSeconds: number;
 }): number => stateOrConfig.durationSeconds * 1000;
@@ -819,7 +825,7 @@ export const reconcileSnapshotFromJournal = (
     snapshot.journal,
     dictionary,
     snapshot.startedAtWallMs,
-    { durationSeconds: snapshot.durationSeconds }
+    { durationSeconds: normalizeRushDurationSeconds(snapshot.durationSeconds) }
   );
   if (!replay.ok || !replay.state) return null;
   return {
