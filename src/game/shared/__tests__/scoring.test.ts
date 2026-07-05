@@ -1,3 +1,4 @@
+import { describe, expect, it } from "vitest";
 import {
   buildFinalScoreBreakdown,
   buildRushScoreBreakdown,
@@ -38,10 +39,10 @@ describe("calculateConsistencyBonusTotal", () => {
       calculateConsistencyBonusTotal({
         turnCount: 4,
         wordHistory: [
-          { turn: 1, score: 20 },
-          { turn: 2, score: 20 },
-          { turn: 3, score: 20 },
-          { turn: 4, score: 20 },
+          { word: "W", turn: 1, score: 20 },
+          { word: "W", turn: 2, score: 20 },
+          { word: "W", turn: 3, score: 20 },
+          { word: "W", turn: 4, score: 20 },
         ],
       })
     ).toBe(6);
@@ -50,11 +51,11 @@ describe("calculateConsistencyBonusTotal", () => {
       calculateConsistencyBonusTotal({
         turnCount: 5,
         wordHistory: [
-          { turn: 1, score: 20 },
-          { turn: 2, score: 20 },
-          { turn: 3, score: 19 },
-          { turn: 4, score: 20 },
-          { turn: 5, score: 20 },
+          { word: "W", turn: 1, score: 20 },
+          { word: "W", turn: 2, score: 20 },
+          { word: "W", turn: 3, score: 19 },
+          { word: "W", turn: 4, score: 20 },
+          { word: "W", turn: 5, score: 20 },
         ],
       })
     ).toBe(0);
@@ -65,9 +66,9 @@ describe("calculateConsistencyBonusTotal", () => {
       calculateConsistencyBonusTotal({
         turnCount: 4,
         wordHistory: [
-          { turn: 1, score: 20 },
-          { turn: 3, score: 20 },
-          { turn: 4, score: 20 },
+          { word: "W", turn: 1, score: 20 },
+          { word: "W", turn: 3, score: 20 },
+          { word: "W", turn: 4, score: 20 },
         ],
       })
     ).toBe(0);
@@ -84,10 +85,10 @@ describe("buildFinalScoreBreakdown", () => {
       rackTiles: [{ value: 5 }],
       durationMs: 30 * 60 * 1000,
       wordHistory: [
-        { turn: 1, score: 20 },
-        { turn: 2, score: 20 },
-        { turn: 3, score: 20 },
-        { turn: 4, score: 20 },
+        { word: "W", turn: 1, score: 20 },
+        { word: "W", turn: 2, score: 20 },
+        { word: "W", turn: 3, score: 20 },
+        { word: "W", turn: 4, score: 20 },
       ],
     });
 

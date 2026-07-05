@@ -1,4 +1,8 @@
-import dictionaryWords from "../data/dictionaryWords.json";
+// The word list is ~2.5 MB; load it lazily so the app shell stays small.
+const loadDictionaryWords = async (): Promise<string[]> => {
+  const module = await import("../data/dictionaryWords.json");
+  return module.default as string[];
+};
 import scrabbleLoanwords from "../data/scrabbleLoanwords";
 
 const LOAD_CHUNK_SIZE = 5000;
@@ -2393,7 +2397,7 @@ const INVALID_IRREGULAR_INFLECTIONS = new Set([
 
 // Words that are explicitly allowed to apply an additional suffix
 // to a base form that already ends in -en or -er.
-const VALID_SECOND_SUFFIX_ON_EN_ER = new Set([]);
+const VALID_SECOND_SUFFIX_ON_EN_ER = new Set<string>([]);
 
 // Valid y+er forms that do not use the usual y->ier comparative transform.
 const VALID_Y_ER_SUFFIX_EXCEPTIONS = new Set([
@@ -2580,12 +2584,15 @@ const VALID_IRREGULAR_ADJECTIVE_FORMS = new Set([
 ]);
 
 class Dictionary {
+  words: Set<string>;
+  loaded: boolean;
+
   constructor() {
     this.words = new Set();
     this.loaded = false;
   }
 
-  async load(onProgress) {
+  async load(onProgress?: (progress: number) => void): Promise<void> {
     const reportProgress =
       typeof onProgress === "function" ? onProgress : () => {};
 
@@ -2595,6 +2602,8 @@ class Dictionary {
     }
 
     reportProgress(0);
+
+    const dictionaryWords = await loadDictionaryWords();
 
     for (let index = 0; index < dictionaryWords.length; index += 1) {
       const word = dictionaryWords[index];
@@ -2651,7 +2660,7 @@ class Dictionary {
     console.log(`Dictionary loaded: ${this.words.size} words`);
   }
 
-  isValid(word) {
+  isValid(word: string): boolean {
     if (!this.loaded) return false;
     const normalizedWord = word.toLowerCase();
     if (
@@ -2667,11 +2676,15 @@ class Dictionary {
     return this.isLikelyInflectedForm(normalizedWord);
   }
 
-  getWordCount() {
+  getWordCount(): number {
     return this.words.size;
   }
 
-  hasKnownBaseForm(candidates, derivedWord = "", options = {}) {
+  hasKnownBaseForm(
+    candidates: string[],
+    derivedWord = "",
+    options: { allowSecondSuffixOnEnEr?: boolean } = {}
+  ): boolean {
     const { allowSecondSuffixOnEnEr = false } = options;
     return candidates.some((candidate) => {
       if (!candidate) return false;
@@ -2690,7 +2703,7 @@ class Dictionary {
     });
   }
 
-  isLikelyInflectedForm(word) {
+  isLikelyInflectedForm(word: string): boolean {
     if (word.length < 4) {
       return false;
     }
@@ -2804,7 +2817,7 @@ class Dictionary {
     return false;
   }
 
-  removeDoubledTrailingConsonant(base) {
+  removeDoubledTrailingConsonant(base: string): string {
     if (base.length < 3) {
       return "";
     }

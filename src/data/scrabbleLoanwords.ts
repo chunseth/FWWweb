@@ -1,6 +1,6 @@
 // Supplemental borrowed words accepted by modern Scrabble dictionaries but
 // missing from the bundled base word list.
-const scrabbleLoanwords = [
+const scrabbleLoanwords: string[] = [
   "adobo",
   "adobos",
   "aikido",

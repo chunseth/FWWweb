@@ -1,16 +1,18 @@
+import type { BoardCell, PremiumSquares } from "./types";
+
 export const BOARD_SIZE = 15;
 export const MINI_BOARD_SIZE = 11;
 export const SCRABBLE_BONUS = 50;
 
-export const createEmptyBoard = (boardSize = BOARD_SIZE) =>
+export const createEmptyBoard = (boardSize: number = BOARD_SIZE): BoardCell[][] =>
   Array(boardSize)
     .fill(null)
-    .map(() => Array(boardSize).fill(null));
+    .map(() => Array<BoardCell>(boardSize).fill(null));
 
-export const createClassicPremiumSquares = () => {
-  const premiumSquares = {};
+export const createClassicPremiumSquares = (): PremiumSquares => {
+  const premiumSquares: PremiumSquares = {};
 
-  const twSquares = [
+  const twSquares: Array<[number, number]> = [
     [0, 0],
     [0, 7],
     [0, 14],
@@ -22,7 +24,7 @@ export const createClassicPremiumSquares = () => {
   ];
   twSquares.forEach(([r, c]) => (premiumSquares[`${r},${c}`] = "tw"));
 
-  const dwSquares = [
+  const dwSquares: Array<[number, number]> = [
     [1, 1],
     [2, 2],
     [3, 3],
@@ -42,7 +44,7 @@ export const createClassicPremiumSquares = () => {
   ];
   dwSquares.forEach(([r, c]) => (premiumSquares[`${r},${c}`] = "dw"));
 
-  const tlSquares = [
+  const tlSquares: Array<[number, number]> = [
     [1, 5],
     [1, 9],
     [5, 1],
@@ -70,7 +72,7 @@ export const createClassicPremiumSquares = () => {
   ];
   tlSquares.forEach(([r, c]) => (premiumSquares[`${r},${c}`] = "tl"));
 
-  const dlSquares = [
+  const dlSquares: Array<[number, number]> = [
     [0, 3],
     [0, 11],
     [3, 0],
@@ -107,10 +109,10 @@ export const createClassicPremiumSquares = () => {
   return premiumSquares;
 };
 
-export const createMiniPremiumSquares = () => {
-  const premiumSquares = {};
+export const createMiniPremiumSquares = (): PremiumSquares => {
+  const premiumSquares: PremiumSquares = {};
 
-  const twSquares = [
+  const twSquares: Array<[number, number]> = [
     [0, 0],
     [10, 0],
     [0, 10],
@@ -118,7 +120,7 @@ export const createMiniPremiumSquares = () => {
   ];
   twSquares.forEach(([r, c]) => (premiumSquares[`${r},${c}`] = "tw"));
 
-  const dwSquares = [
+  const dwSquares: Array<[number, number]> = [
     [1, 1],
     [2, 2],
     [1, 9],
@@ -130,7 +132,7 @@ export const createMiniPremiumSquares = () => {
   ];
   dwSquares.forEach(([r, c]) => (premiumSquares[`${r},${c}`] = "dw"));
 
-  const dlSquares = [
+  const dlSquares: Array<[number, number]> = [
     [0, 3],
     [0, 7],
     [1, 5],
@@ -146,7 +148,7 @@ export const createMiniPremiumSquares = () => {
   ];
   dlSquares.forEach(([r, c]) => (premiumSquares[`${r},${c}`] = "dl"));
 
-  const tlSquares = [
+  const tlSquares: Array<[number, number]> = [
     [3, 3],
     [4, 4],
     [3, 7],

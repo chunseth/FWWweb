@@ -1,6 +1,15 @@
+import type { BagTile, Tile } from "./types";
+
 export const BLANK_LETTER = " ";
 
-export const TILE_DISTRIBUTION = {
+export interface TileDistributionEntry {
+  count: number;
+  value: number;
+}
+
+export type TileDistribution = Record<string, TileDistributionEntry>;
+
+export const TILE_DISTRIBUTION: TileDistribution = {
   [BLANK_LETTER]: { count: 2, value: 0 },
   A: { count: 9, value: 1 },
   B: { count: 2, value: 3 },
@@ -30,7 +39,7 @@ export const TILE_DISTRIBUTION = {
   Z: { count: 1, value: 10 },
 };
 
-export const MINI_TILE_DISTRIBUTION = {
+export const MINI_TILE_DISTRIBUTION: TileDistribution = {
   [BLANK_LETTER]: { count: 1, value: 0 },
   A: { count: 3, value: 1 },
   B: { count: 1, value: 3 },
@@ -60,7 +69,7 @@ export const MINI_TILE_DISTRIBUTION = {
   Z: { count: 0, value: 10 },
 };
 
-export const hashSeed = (seed) => {
+export const hashSeed = (seed: string): number => {
   // FNV-1a with an extra avalanche step so adjacent seeds do not map to
   // nearly-adjacent RNG states.
   let hash = 0x811c9dc5;
@@ -79,7 +88,15 @@ export const hashSeed = (seed) => {
   return hash >>> 0;
 };
 
-export const createSeededRandom = (seed, initialState = null) => {
+export interface SeededRandom {
+  next: () => number;
+  getState: () => number;
+}
+
+export const createSeededRandom = (
+  seed: string,
+  initialState: number | null = null
+): SeededRandom => {
   let state =
     typeof initialState === "number" && Number.isFinite(initialState)
       ? initialState
@@ -94,7 +111,7 @@ export const createSeededRandom = (seed, initialState = null) => {
   };
 };
 
-export const shuffleArray = (array, randomFn) => {
+export const shuffleArray = <T>(array: readonly T[], randomFn: () => number): T[] => {
   const shuffled = [...array];
   for (let i = shuffled.length - 1; i > 0; i -= 1) {
     const j = Math.floor(randomFn() * (i + 1));
@@ -103,8 +120,8 @@ export const shuffleArray = (array, randomFn) => {
   return shuffled;
 };
 
-export const initializeTileBag = () => {
-  const tileBag = [];
+export const initializeTileBag = (): BagTile[] => {
+  const tileBag: BagTile[] = [];
   for (const [letter, data] of Object.entries(TILE_DISTRIBUTION)) {
     for (let i = 0; i < data.count; i += 1) {
       tileBag.push({ letter, value: data.value });
@@ -113,8 +130,8 @@ export const initializeTileBag = () => {
   return tileBag;
 };
 
-export const initializeMiniTileBag = (seed = "") => {
-  const distribution = Object.fromEntries(
+export const initializeMiniTileBag = (seed: string | number = ""): BagTile[] => {
+  const distribution: TileDistribution = Object.fromEntries(
     Object.entries(MINI_TILE_DISTRIBUTION).map(([letter, data]) => [
       letter,
       { ...data },
@@ -141,7 +158,7 @@ export const initializeMiniTileBag = (seed = "") => {
     }
   }
 
-  const tileBag = [];
+  const tileBag: BagTile[] = [];
   for (const [letter, data] of Object.entries(distribution)) {
     for (let i = 0; i < data.count; i += 1) {
       tileBag.push({ letter, value: data.value });
@@ -150,7 +167,10 @@ export const initializeMiniTileBag = (seed = "") => {
   return tileBag;
 };
 
-export const createShuffledTileBag = (seed, initialState = null) => {
+export const createShuffledTileBag = (
+  seed: string,
+  initialState: number | null = null
+): { random: SeededRandom; tileBag: BagTile[] } => {
   const random = createSeededRandom(seed, initialState);
   return {
     random,
@@ -158,18 +178,24 @@ export const createShuffledTileBag = (seed, initialState = null) => {
   };
 };
 
+export interface DrawResult {
+  drawnTiles: Tile[];
+  nextBag: BagTile[];
+  nextTileId: number;
+}
+
 export const drawTilesFromBag = (
-  tileBag,
-  count,
+  tileBag: readonly BagTile[],
+  count: number,
   nextTileId = 0,
-  ownerId = null
-) => {
+  ownerId: string | null = null
+): DrawResult => {
   const nextBag = [...tileBag];
-  const drawnTiles = [];
+  const drawnTiles: Tile[] = [];
   let nextId = nextTileId;
 
   for (let i = 0; i < count && nextBag.length > 0; i += 1) {
-    const tile = nextBag.pop();
+    const tile = nextBag.pop()!;
     drawnTiles.push({
       ...tile,
       id: ownerId ? `${ownerId}-${nextId}` : nextId,

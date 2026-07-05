@@ -1,3 +1,4 @@
+import { beforeAll, describe, expect, it } from "vitest";
 import { dictionary } from "../dictionary";
 
 describe("dictionary validation", () => {

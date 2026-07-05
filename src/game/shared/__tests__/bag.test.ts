@@ -1,3 +1,4 @@
+import { describe, expect, it } from "vitest";
 import {
   createShuffledTileBag,
   hashSeed,
@@ -33,7 +34,7 @@ describe("bag seed hashing", () => {
     expect(firstBag).toEqual(secondBag);
     expect(firstBag).toHaveLength(48);
 
-    const count = (letter) =>
+    const count = (letter: string) =>
       firstBag.filter((tile) => tile.letter === letter).length;
 
     expect(count("O")).toBe(5);

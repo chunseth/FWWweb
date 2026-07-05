@@ -1,7 +1,17 @@
 import { BOARD_SIZE } from "./premiumSquares";
+import type {
+  BoardCell,
+  CellCoord,
+  DictionaryLike,
+  SubmitValidationResult,
+  WordOnBoard,
+} from "./types";
 
-export const getPlacedCells = (board, boardSize = BOARD_SIZE) => {
-  const placedCells = [];
+export const getPlacedCells = (
+  board: BoardCell[][],
+  boardSize: number = BOARD_SIZE
+): CellCoord[] => {
+  const placedCells: CellCoord[] = [];
 
   for (let row = 0; row < boardSize; row += 1) {
     for (let col = 0; col < boardSize; col += 1) {
@@ -15,16 +25,20 @@ export const getPlacedCells = (board, boardSize = BOARD_SIZE) => {
   return placedCells;
 };
 
-export const getWordsOnBoard = (board, boardSize = BOARD_SIZE) => {
-  const words = [];
-  const visited = new Set();
+export const getWordsOnBoard = (
+  board: BoardCell[][],
+  boardSize: number = BOARD_SIZE
+): WordOnBoard[] => {
+  const words: WordOnBoard[] = [];
+  const visited = new Set<string>();
 
   for (let row = 0; row < boardSize; row += 1) {
-    let word = [];
-    let cells = [];
+    let word: string[] = [];
+    let cells: CellCoord[] = [];
     for (let col = 0; col < boardSize; col += 1) {
-      if (board[row][col]) {
-        word.push(board[row][col].letter);
+      const cell = board[row][col];
+      if (cell) {
+        word.push(cell.letter);
         cells.push({ row, col });
       } else {
         if (word.length >= 2) {
@@ -36,7 +50,7 @@ export const getWordsOnBoard = (board, boardSize = BOARD_SIZE) => {
               cells: [...cells],
               direction: "horizontal",
             });
-            cells.forEach((cell) => visited.add(`${cell.row},${cell.col}`));
+            cells.forEach((c) => visited.add(`${c.row},${c.col}`));
           }
         }
         word = [];
@@ -58,11 +72,12 @@ export const getWordsOnBoard = (board, boardSize = BOARD_SIZE) => {
   }
 
   for (let col = 0; col < boardSize; col += 1) {
-    let word = [];
-    let cells = [];
+    let word: string[] = [];
+    let cells: CellCoord[] = [];
     for (let row = 0; row < boardSize; row += 1) {
-      if (board[row][col]) {
-        word.push(board[row][col].letter);
+      const cell = board[row][col];
+      if (cell) {
+        word.push(cell.letter);
         cells.push({ row, col });
       } else {
         if (word.length >= 2) {
@@ -74,7 +89,7 @@ export const getWordsOnBoard = (board, boardSize = BOARD_SIZE) => {
               cells: [...cells],
               direction: "vertical",
             });
-            cells.forEach((cell) => visited.add(`${cell.row},${cell.col}`));
+            cells.forEach((c) => visited.add(`${c.row},${c.col}`));
           }
         }
         word = [];
@@ -98,13 +113,21 @@ export const getWordsOnBoard = (board, boardSize = BOARD_SIZE) => {
   return words;
 };
 
-export const hasNewTiles = (wordData, boardAtTurnStart) => {
+export const hasNewTiles = (
+  wordData: WordOnBoard,
+  boardAtTurnStart: boolean[][] | null | undefined
+): boolean => {
   if (!boardAtTurnStart) return true;
 
-  return wordData.cells.some(({ row, col }) => boardAtTurnStart[row][col] === false);
+  return wordData.cells.some(
+    ({ row, col }) => boardAtTurnStart[row][col] === false
+  );
 };
 
-const arePlacedTilesConnectedInLine = (board, placedCells) => {
+const arePlacedTilesConnectedInLine = (
+  board: BoardCell[][],
+  placedCells: CellCoord[]
+): boolean => {
   if (placedCells.length <= 1) return true;
 
   const sameRow = placedCells.every(({ row }) => row === placedCells[0].row);
@@ -141,7 +164,13 @@ export const validateSubmitTurn = ({
   boardAtTurnStart,
   dictionary,
   boardSize = BOARD_SIZE,
-}) => {
+}: {
+  board: BoardCell[][];
+  isFirstTurn: boolean;
+  boardAtTurnStart: boolean[][] | null;
+  dictionary: DictionaryLike;
+  boardSize?: number;
+}): SubmitValidationResult => {
   const placementValidation = validateSubmitPlacement({
     board,
     isFirstTurn,
@@ -176,7 +205,12 @@ export const validateSubmitPlacement = ({
   isFirstTurn,
   boardAtTurnStart,
   boardSize = BOARD_SIZE,
-}) => {
+}: {
+  board: BoardCell[][];
+  isFirstTurn: boolean;
+  boardAtTurnStart: boolean[][] | null;
+  boardSize?: number;
+}): SubmitValidationResult => {
   const placedCells = getPlacedCells(board, boardSize);
 
   if (placedCells.length === 0) {
@@ -238,7 +272,9 @@ export const validateSubmitPlacement = ({
         if (r < 0 || r >= boardSize || c < 0 || c >= boardSize) return false;
         return (
           board[r][c] !== null &&
-          !placedCells.some((selectedCell) => selectedCell.row === r && selectedCell.col === c)
+          !placedCells.some(
+            (selectedCell) => selectedCell.row === r && selectedCell.col === c
+          )
         );
       });
     });
@@ -265,7 +301,9 @@ export const validateSubmitPlacement = ({
     };
   }
 
-  const newWords = words.filter((wordData) => hasNewTiles(wordData, boardAtTurnStart));
+  const newWords = words.filter((wordData) =>
+    hasNewTiles(wordData, boardAtTurnStart)
+  );
   if (newWords.length === 0) {
     return {
       ok: false,
