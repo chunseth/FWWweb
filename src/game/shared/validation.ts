@@ -191,8 +191,8 @@ export const validateSubmitTurn = ({
     return {
       ok: false,
       error: {
-        title: "Invalid Word",
-        text: `Invalid words: ${invalidWords.join(", ")}`,
+        title: "Not Accepted",
+        text: `Not accepted: ${invalidWords.join(", ")}`,
       },
     };
   }

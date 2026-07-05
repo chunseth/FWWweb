@@ -187,17 +187,67 @@ button:disabled {
   color: var(--bad);
 }
 
-.hud__timer--flash {
-  animation: hud-flash 900ms ease-out;
+.hud__score-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
 }
 
-@keyframes hud-flash {
-  0% {
-    background: var(--accent-strong);
-    color: #2b1a00;
+.hud__combo {
+  font-size: calc(var(--cell-size) * 0.42);
+  font-weight: 800;
+  color: var(--text-dim);
+}
+
+.hud__combo--hot {
+  color: var(--accent-strong);
+}
+
+.hud__right {
+  justify-self: end;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.hud__menu-btn {
+  width: calc(var(--cell-size) * 1.05);
+  height: calc(var(--cell-size) * 1.05);
+  font-size: calc(var(--cell-size) * 0.5);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Threshold banner: fixed overlay, no layout impact, never blocks a drag. */
+.time-banner {
+  position: fixed;
+  left: 50%;
+  top: 18%;
+  transform: translateX(-50%);
+  padding: 10px 22px;
+  border-radius: 12px;
+  background: rgba(255, 156, 26, 0.95);
+  color: #2b1a00;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  pointer-events: none;
+  z-index: 900;
+  animation: banner-in 140ms ease-out;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+@keyframes banner-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.92);
   }
-  100% {
-    background: var(--bg-raised);
+  to {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
   }
 }
 
@@ -217,9 +267,71 @@ button:disabled {
 
 /* ---------- board ---------- */
 
-.board-wrap {
+.board-viewport {
   width: min(94vw, 62vh, 520px);
+  aspect-ratio: 1;
   position: relative;
+  overflow: hidden;
+  border-radius: 10px;
+  touch-action: none;
+}
+
+.board-viewport__inner {
+  width: 100%;
+  height: 100%;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.board-viewport__reset {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  z-index: 20;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-weight: 800;
+  background: rgba(29, 39, 51, 0.9);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.board-turn-banner {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 30;
+  width: min(calc(100% - 20px), 430px);
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: rgba(29, 39, 51, 0.94);
+  border: 1px solid rgba(88, 196, 122, 0.55);
+  border-left: 4px solid var(--good);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  animation: toast-in 160ms ease-out;
+  cursor: pointer;
+}
+
+.board-turn-banner__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.board-turn-banner__text {
+  margin: 2px 0 0;
+  color: var(--text-dim);
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.board-turn-banner__points,
+.board-turn-banner__combo {
+  color: var(--good);
+  font-weight: 800;
 }
 
 .board {
@@ -279,18 +391,7 @@ button:disabled {
   font-size: calc(var(--cell-size) * 0.5);
 }
 
-.board__drop-indicator {
-  position: absolute;
-  left: 0;
-  top: 0;
-  border: 2px solid var(--accent);
-  border-radius: 6px;
-  background: rgba(255, 183, 77, 0.18);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 80ms ease;
-  z-index: 5;
-}
+/* No drop-location indicator by design: the carried tile is the cue. */
 
 /* ---------- tiles ---------- */
 
@@ -395,6 +496,8 @@ button:disabled {
 }
 
 .controls .btn {
+  flex: 1 1 0;
+  min-width: 0;
   padding: 11px 18px;
   font-size: 15px;
 }
@@ -477,7 +580,18 @@ button:disabled {
   width: min(92vw, 420px);
   max-height: 86vh;
   overflow-y: auto;
-  animation: toast-in 180ms ease-out;
+  animation: modal-in 180ms ease-out;
+}
+
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .modal__title {
@@ -553,9 +667,260 @@ button:disabled {
   gap: 10px;
 }
 
+/* ---------- score preview (fixed height: never shifts the board/rack) ---- */
+
+.score-preview {
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.score-preview__chip {
+  padding: 3px 14px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 800;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.score-preview__chip--ok {
+  background: rgba(88, 196, 122, 0.16);
+  color: var(--good);
+  border: 1px solid rgba(88, 196, 122, 0.45);
+}
+
+.score-preview__chip--bad {
+  background: rgba(224, 96, 96, 0.14);
+  color: var(--bad);
+  border: 1px solid rgba(224, 96, 96, 0.4);
+}
+
+/* ---------- pause ---------- */
+
+.modal-backdrop--blur {
+  backdrop-filter: blur(7px);
+  -webkit-backdrop-filter: blur(7px);
+}
+
+.rack-blur {
+  filter: blur(5px);
+  pointer-events: none;
+}
+
+.pause__hint {
+  text-align: center;
+  color: var(--text-dim);
+  margin: 0 0 16px;
+  font-size: 14px;
+}
+
+.pause__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ---------- swap animation ---------- */
+
+.rack__slot {
+  position: relative;
+}
+
+.rack__slot--swapping .tile {
+  animation: swap-tile-out 340ms ease-in forwards;
+}
+
+@keyframes swap-tile-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+
+.rack__swap-float {
+  position: absolute;
+  left: 50%;
+  top: -4px;
+  transform: translateX(-50%);
+  font-size: calc(var(--cell-size) * 0.32);
+  font-weight: 800;
+  color: var(--bad);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 30;
+  animation: swap-float-up 700ms ease-out forwards;
+}
+
+@keyframes swap-float-up {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(0);
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-26px);
+  }
+}
+
+/* ---------- combo explainer ---------- */
+
+.combo-explainer {
+  color: var(--text-dim);
+  font-size: 15px;
+}
+
+.combo-explainer p {
+  margin: 0 0 10px;
+}
+
+.combo-explainer strong {
+  color: var(--text);
+}
+
+.combo-explainer__table {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 0;
+}
+
+.combo-explainer__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.combo-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  padding: 3px 8px;
+  border-radius: 8px;
+  background: rgba(255, 156, 26, 0.18);
+  color: var(--accent-strong);
+  font-weight: 800;
+}
+
+.combo-explainer__note {
+  font-size: 13.5px;
+}
+
+.toast__combo {
+  margin-left: 10px;
+  color: var(--accent-strong);
+  font-weight: 800;
+}
+
+/* ---------- username ---------- */
+
+.username-form {
+  width: min(92vw, 360px);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  text-align: left;
+}
+
+.username-form__label {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+
+.username-form__row {
+  display: flex;
+  gap: 8px;
+}
+
+.username-form__input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-weight: 700;
+  padding: 11px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--bg-raised);
+  color: var(--text);
+  outline: none;
+}
+
+.username-form__input:focus {
+  border-color: var(--accent);
+}
+
+.username-form__status {
+  min-height: 20px;
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--good);
+}
+
+.username-form__status--error {
+  color: var(--bad);
+}
+
+.menu__player {
+  color: var(--text-dim);
+  font-size: 15px;
+  margin: 0;
+}
+
+.menu__player strong {
+  color: var(--text);
+}
+
+.menu__change-name {
+  margin-left: 8px;
+  background: none;
+  border: none;
+  color: var(--accent);
+  text-decoration: underline;
+  font-size: 13px;
+  padding: 0;
+}
+
+/* ---------- orientation lock (phones portrait-only) ---------- */
+
+.rotate-overlay {
+  display: none;
+}
+
+/* Phone-sized landscape viewports: block play, ask for portrait.
+   Tablets in landscape have far more height and are unaffected. */
+@media (orientation: landscape) and (max-height: 480px) {
+  .rotate-overlay {
+    display: flex;
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    background: var(--bg);
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    font-size: 18px;
+    font-weight: 700;
+    padding: 24px;
+  }
+}
+
 /* Reduced motion: keep the game usable without the flourishes. */
 @media (prefers-reduced-motion: reduce) {
-  .hud__timer--flash,
+  .time-banner,
   .toast,
   .modal {
     animation: none;

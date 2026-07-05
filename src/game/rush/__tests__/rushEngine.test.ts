@@ -10,6 +10,7 @@ import {
   reorderRack,
   replayJournal,
   returnAllDraftTiles,
+  shuffleRack,
   submitTurn,
   swapTiles,
   RUSH_DURATION_MS,
@@ -155,7 +156,10 @@ describe("submitTurn", () => {
     state = place(state, 1, 5, 6);
     const result = submitTurn(state, { isValid: () => false });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.title).toBe("Invalid Word");
+    if (!result.ok) {
+      expect(result.error.title).toBe("Not Accepted");
+      expect(result.error.text).toMatch(/^Not accepted: /);
+    }
   });
 
   it("requires later turns to connect to existing words", () => {
@@ -236,6 +240,21 @@ describe("reorderRack", () => {
   });
 });
 
+describe("shuffleRack", () => {
+  it("reorders rack tiles without spending a turn", () => {
+    const state = createRushRun("seed-shuffle", 1000);
+    const next = shuffleRack(state);
+
+    expect(next.turnCount).toBe(0);
+    expect(next.elapsedMs).toBe(0);
+    expect(next.journal).toHaveLength(0);
+    expect(next.rack).toHaveLength(state.rack.length);
+    expect(next.rack.map((tile) => tile.id).sort()).toEqual(
+      state.rack.map((tile) => tile.id).sort()
+    );
+  });
+});
+
 describe("expireRun and scoring", () => {
   it("builds a rush breakdown with turn penalties but no rack penalty or time bonus", () => {
     let state = createRushRun("seed-7", 1000);
@@ -272,6 +291,54 @@ describe("expireRun and scoring", () => {
     expect(placeTile(expired, 0, 5, 5, "Z").ok).toBe(false);
     expect(swapTiles(expired, [0]).ok).toBe(false);
     expect(submitTurn(expired, acceptAll).ok).toBe(false);
+  });
+});
+
+describe("bag exhaustion", () => {
+  it("ends the run immediately when the last bag+rack tiles are submitted", () => {
+    // Craft a nearly-finished run: empty bag, two tiles left in the rack.
+    const base = createRushRun("endgame-seed", 1000);
+    const twoTiles = base.rack.slice(0, 2).map((tile, rackIndex) => ({
+      ...tile,
+      letter: tile.value === 0 ? "A" : tile.letter, // avoid blank handling
+      value: tile.value === 0 ? 1 : tile.value,
+      rackIndex,
+    }));
+    let state: RushSnapshot = { ...base, bag: [], rack: twoTiles };
+
+    state = place(state, 0, 5, 5);
+    state = place(state, 1, 5, 6);
+    const result = submitTurn(state, acceptAll);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.detail.completedAllTiles).toBe(true);
+    expect(result.state.status).toBe("expired");
+    expect(result.state.finalBreakdown).not.toBeNull();
+    expect(result.state.rack).toHaveLength(0);
+    expect(result.state.bag).toHaveLength(0);
+  });
+
+  it("keeps the run alive when the bag empties but rack tiles remain", () => {
+    const base = createRushRun("endgame-seed", 1000);
+    const threeTiles = base.rack.slice(0, 3).map((tile, rackIndex) => ({
+      ...tile,
+      letter: tile.value === 0 ? "A" : tile.letter,
+      value: tile.value === 0 ? 1 : tile.value,
+      rackIndex,
+    }));
+    let state: RushSnapshot = { ...base, bag: [], rack: threeTiles };
+
+    state = place(state, 0, 5, 5);
+    state = place(state, 1, 5, 6);
+    const result = submitTurn(state, acceptAll);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // One tile still in hand: the player can keep playing it.
+    expect(result.detail.completedAllTiles).toBe(false);
+    expect(result.state.status).toBe("active");
+    expect(result.state.rack).toHaveLength(1);
   });
 });
 

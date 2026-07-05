@@ -296,6 +296,21 @@ export const reorderRack = (
   return { ...state, rack: next, board };
 };
 
+/** Shuffle visible rack tiles without spending a turn or changing score. */
+export const shuffleRack = (state: RushSnapshot): RushSnapshot => {
+  if (state.status !== "active") return state;
+  if (getUsedRackIndices(state).size > 0) return state;
+  if (state.rack.length < 2) return state;
+
+  const random = createSeededRandom(state.seed, state.randomState);
+  const rack = shuffleArray(state.rack, random.next).map((tile, rackIndex) => ({
+    ...tile,
+    rackIndex,
+  }));
+
+  return { ...state, rack, randomState: random.getState() };
+};
+
 export interface SubmitDetail {
   turnScore: number;
   baseWordScore: number;

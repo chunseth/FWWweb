@@ -25,6 +25,7 @@ import {
   removeBoardTile as engineRemoveBoardTile,
   reorderRack as engineReorderRack,
   returnAllDraftTiles,
+  shuffleRack as engineShuffleRack,
   submitTurn as engineSubmitTurn,
   swapTiles as engineSwapTiles,
   RUSH_DURATION_MS,
@@ -93,9 +94,12 @@ export interface UseRushGameResult {
     toIndex: number,
     releasedIndex?: number | null
   ) => void;
+  shuffleRack: () => void;
   submitWord: () => SubmitDetail | null;
   swapTiles: (rackIndices: number[]) => boolean;
   dismissMessage: () => void;
+  pauseClock: () => boolean;
+  resumeClock: () => void;
 }
 
 export const useRushGame = (
@@ -125,6 +129,35 @@ export const useRushGame = (
     const since = runningSinceRef.current;
     const elapsed = since == null ? base : base + (Date.now() - since);
     return Math.min(elapsed, RUSH_DURATION_MS);
+  }, []);
+
+  const startClockIfNeeded = useCallback(() => {
+    if (runningSinceRef.current != null) return;
+    runningSinceRef.current = Date.now();
+  }, []);
+
+  /** Freeze the countdown (pause menu). No-op if the clock never started. */
+  const pauseClock = useCallback((): boolean => {
+    if (runningSinceRef.current == null) return false;
+    baseElapsedRef.current = Math.min(
+      baseElapsedRef.current + (Date.now() - runningSinceRef.current),
+      RUSH_DURATION_MS
+    );
+    runningSinceRef.current = null;
+    const current = stateRef.current;
+    if (current && current.status === "active") {
+      saveAutosave({ ...current, elapsedMs: baseElapsedRef.current });
+    }
+    return true;
+  }, []);
+
+  /** Resume a paused countdown. Only restarts a clock that had started. */
+  const resumeClock = useCallback(() => {
+    const current = stateRef.current;
+    if (!current || current.status !== "active") return;
+    if (runningSinceRef.current != null) return;
+    if (baseElapsedRef.current <= 0) return; // first move will start it
+    runningSinceRef.current = Date.now();
   }, []);
 
   const dictionaryRef = useRef(dictionary);
@@ -247,7 +280,7 @@ export const useRushGame = (
     const run = createRushRun(seed, Date.now());
     resultSavedRef.current = false;
     baseElapsedRef.current = 0;
-    runningSinceRef.current = Date.now();
+    runningSinceRef.current = null;
     setMessage(null);
     setRemainingMs(RUSH_DURATION_MS);
     setSavedRunAvailable(false);
@@ -275,7 +308,7 @@ export const useRushGame = (
     }
 
     baseElapsedRef.current = resumed.elapsedMs;
-    runningSinceRef.current = Date.now();
+    runningSinceRef.current = resumed.elapsedMs > 0 ? Date.now() : null;
     setRemainingMs(Math.max(0, RUSH_DURATION_MS - resumed.elapsedMs));
     setState(resumed);
     return true;
@@ -306,11 +339,12 @@ export const useRushGame = (
         setMessage({ ...result.error, kind: "error" });
         return false;
       }
+      startClockIfNeeded();
       setState(result.state);
       scheduleDraftSave();
       return true;
     },
-    [requireActive, scheduleDraftSave]
+    [requireActive, scheduleDraftSave, startClockIfNeeded]
   );
 
   const moveBoardTile = useCallback(
@@ -379,6 +413,15 @@ export const useRushGame = (
     [requireActive, scheduleDraftSave]
   );
 
+  const shuffleRack = useCallback(() => {
+    const current = requireActive();
+    if (!current) return;
+    const next = engineShuffleRack(current);
+    if (next === current) return;
+    setState(next);
+    persist(next, getElapsedMs());
+  }, [requireActive, persist, getElapsedMs]);
+
   const submitWord = useCallback((): SubmitDetail | null => {
     const current = requireActive();
     if (!current) return null;
@@ -426,6 +469,8 @@ export const useRushGame = (
     (rackIndices: number[]): boolean => {
       const current = requireActive();
       if (!current) return false;
+      // Swapping is a game action: it starts the run clock like a placement.
+      startClockIfNeeded();
       const elapsed = getElapsedMs();
       const result = engineSwapTiles(current, rackIndices, elapsed);
       if (!result.ok) {
@@ -441,7 +486,7 @@ export const useRushGame = (
       });
       return true;
     },
-    [requireActive, getElapsedMs, persist]
+    [requireActive, getElapsedMs, persist, startClockIfNeeded]
   );
 
   const dismissMessage = useCallback(() => setMessage(null), []);
@@ -473,8 +518,11 @@ export const useRushGame = (
     returnTileToRack,
     returnAllDrafts,
     reorderRack,
+    shuffleRack,
     submitWord,
     swapTiles,
     dismissMessage,
+    pauseClock,
+    resumeClock,
   };
 };

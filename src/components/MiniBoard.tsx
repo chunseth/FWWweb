@@ -51,8 +51,11 @@ export const MiniBoard = memo(
                 style={{ width: "100%", height: "100%" }}
                 onPointerDown={
                   interactive && isDraft
-                    ? (event) =>
-                        onTilePointerDown(event, { type: "board", row, col })
+                    ? (event) => {
+                        // Keep tile drags out of the board's pinch/pan gestures.
+                        event.stopPropagation();
+                        onTilePointerDown(event, { type: "board", row, col });
+                      }
                     : undefined
                 }
               >

@@ -8,6 +8,14 @@ import type { Locator, Page } from "@playwright/test";
  */
 
 const startRun = async (page: Page) => {
+  // Skip the one-time username + combo-explainer gates.
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      "fwwweb.profile.v1",
+      JSON.stringify({ username: "E2ePlayer", verified: false, savedAtMs: 1 })
+    );
+    localStorage.setItem("fwwweb.comboExplained.v1", "1");
+  });
   await page.goto("/");
   const start = page.getByRole("button", { name: /start rush/i });
   await expect(start).toBeEnabled({ timeout: 15_000 });
@@ -64,6 +72,25 @@ test("tapping a draft board tile returns it to the rack", async ({ page }) => {
   await draftTileOnBoard(page).click();
   await expect(draftTileOnBoard(page)).toHaveCount(0);
   await expect(page.locator("[data-rack-tile]")).toHaveCount(7);
+});
+
+test("shows a live points preview for a draft placement", async ({ page }) => {
+  await startRun(page);
+  const firstTile = page.locator("[data-rack-tile]").first();
+  const target = await cellCenter(page, 5, 5);
+  await dragTo(page, firstTile, target.x, target.y);
+  // One tile is never a playable word, but the preview chip must appear
+  // (either invalid, or valid with points) without shifting the layout.
+  await expect(page.locator(".score-preview__chip")).toBeVisible();
+});
+
+test("pauses the timer from the menu and starts a new game", async ({ page }) => {
+  await startRun(page);
+  await page.getByRole("button", { name: /menu/i }).click();
+  await expect(page.getByText(/paused/i)).toBeVisible();
+  await page.getByRole("button", { name: /new game/i }).click();
+  await expect(page.locator(".cell")).toHaveCount(121);
+  await expect(page.getByRole("timer")).toHaveText("5:00");
 });
 
 test("resumes a run with draft placements after a refresh", async ({ page }) => {

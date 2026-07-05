@@ -49,6 +49,29 @@ describe("useRushGame", () => {
     expect(localStorage.getItem(AUTOSAVE_KEY)).not.toBeNull();
   });
 
+  it("does not start the timer until the first tile is placed", () => {
+    const { result } = renderGame();
+    act(() => {
+      result.current.startNewRun();
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(10_000);
+    });
+
+    expect(result.current.state?.status).toBe("active");
+    expect(result.current.remainingMs).toBe(RUSH_DURATION_MS);
+
+    act(() => {
+      result.current.placeRackTile(0, 5, 5, "Z");
+    });
+    act(() => {
+      vi.advanceTimersByTime(1_000);
+    });
+
+    expect(result.current.remainingMs).toBeLessThan(RUSH_DURATION_MS);
+  });
+
   it("submits a word: score, journal, autosave update", () => {
     const { result } = renderGame();
     act(() => {
@@ -88,6 +111,72 @@ describe("useRushGame", () => {
     });
     expect(result.current.state?.swapCount).toBe(1);
     expect(result.current.state?.turnCount).toBe(1);
+  });
+
+  it("starts the timer on a swap, like a placement", () => {
+    const { result } = renderGame();
+    act(() => {
+      result.current.startNewRun();
+    });
+    act(() => {
+      vi.advanceTimersByTime(5_000);
+    });
+    expect(result.current.remainingMs).toBe(RUSH_DURATION_MS);
+
+    act(() => {
+      result.current.swapTiles([0]);
+    });
+    act(() => {
+      vi.advanceTimersByTime(1_000);
+    });
+    expect(result.current.remainingMs).toBeLessThan(RUSH_DURATION_MS);
+  });
+
+  it("pauses and resumes the clock", () => {
+    const { result } = renderGame();
+    act(() => {
+      result.current.startNewRun();
+    });
+    act(() => {
+      result.current.placeRackTile(0, 5, 5, "Z");
+    });
+    act(() => {
+      vi.advanceTimersByTime(2_000);
+    });
+    const beforePause = result.current.remainingMs;
+    expect(beforePause).toBeLessThan(RUSH_DURATION_MS);
+
+    act(() => {
+      result.current.pauseClock();
+    });
+    act(() => {
+      vi.advanceTimersByTime(30_000);
+    });
+    // Frozen while paused (allow one tick of slack).
+    expect(result.current.remainingMs).toBeGreaterThanOrEqual(beforePause - 250);
+
+    act(() => {
+      result.current.resumeClock();
+    });
+    act(() => {
+      vi.advanceTimersByTime(2_000);
+    });
+    expect(result.current.remainingMs).toBeLessThan(beforePause - 1_000);
+  });
+
+  it("does not start a never-started clock on resumeClock", () => {
+    const { result } = renderGame();
+    act(() => {
+      result.current.startNewRun();
+    });
+    act(() => {
+      result.current.pauseClock();
+      result.current.resumeClock();
+    });
+    act(() => {
+      vi.advanceTimersByTime(5_000);
+    });
+    expect(result.current.remainingMs).toBe(RUSH_DURATION_MS);
   });
 
   it("expires the run when the timer hits zero and records a local result", () => {

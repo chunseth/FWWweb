@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../App";
+import { PROFILE_KEY } from "../services/usernameService";
 
 // jsdom lacks ResizeObserver.
 class ResizeObserverStub {
@@ -9,18 +10,58 @@ class ResizeObserverStub {
   disconnect() {}
 }
 
+const seedProfile = () => {
+  localStorage.setItem(
+    PROFILE_KEY,
+    JSON.stringify({ username: "TestPlayer", verified: false, savedAtMs: 1 })
+  );
+  localStorage.setItem("fwwweb.comboExplained.v1", "1");
+};
+
 describe("App", () => {
   beforeEach(() => {
     localStorage.clear();
     vi.stubGlobal("ResizeObserver", ResizeObserverStub);
   });
 
-  it("renders the menu and starts a run", async () => {
+  it("requires a username before starting", async () => {
+    render(<App />);
+    expect(screen.getByLabelText(/pick a username/i)).toBeTruthy();
+    const start = await screen.findByRole("button", { name: /start rush/i });
+    expect((start as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("shows the combo explainer before the first run, then starts", async () => {
+    localStorage.setItem(
+      PROFILE_KEY,
+      JSON.stringify({ username: "TestPlayer", verified: false, savedAtMs: 1 })
+    );
+    render(<App />);
+    const start = await screen.findByRole("button", { name: /start rush/i });
+    await vi.waitFor(() => {
+      expect((start as HTMLButtonElement).disabled).toBe(false);
+    });
+    await act(async () => {
+      fireEvent.click(start);
+    });
+    // First run: explainer appears instead of the board.
+    expect(screen.getByText(/combo bonuses/i)).toBeTruthy();
+
+    const go = screen.getByRole("button", { name: /got it/i });
+    await act(async () => {
+      fireEvent.click(go);
+    });
+    expect(document.querySelectorAll(".cell")).toHaveLength(121);
+    expect(localStorage.getItem("fwwweb.comboExplained.v1")).toBe("1");
+  });
+
+  it("renders the menu and starts a run when already set up", async () => {
+    seedProfile();
     render(<App />);
     expect(screen.getByText(/5-Minute Rush/i)).toBeTruthy();
+    expect(screen.getByText(/TestPlayer/)).toBeTruthy();
 
     const start = await screen.findByRole("button", { name: /start rush/i });
-    // Dictionary load is async; wait for the button to enable.
     await vi.waitFor(() => {
       expect((start as HTMLButtonElement).disabled).toBe(false);
     });
@@ -36,8 +77,26 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /submit/i })).toBeTruthy();
   });
 
+  it("pauses from the menu button and resumes", async () => {
+    seedProfile();
+    render(<App />);
+    const start = await screen.findByRole("button", { name: /start rush/i });
+    await vi.waitFor(() => {
+      expect((start as HTMLButtonElement).disabled).toBe(false);
+    });
+    await act(async () => {
+      fireEvent.click(start);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /menu/i }));
+    expect(screen.getByText(/paused/i)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /resume/i }));
+    expect(screen.queryByText(/paused/i)).toBeNull();
+  });
+
   it("offers to resume when an autosave exists", async () => {
-    // Seed an autosave by starting a run in a first mount.
+    seedProfile();
     const first = render(<App />);
     const start = await first.findByRole("button", { name: /start rush/i });
     await vi.waitFor(() => {

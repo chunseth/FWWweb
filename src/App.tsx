@@ -2,23 +2,51 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GameHud } from "./components/GameHud";
 import { MiniBoard } from "./components/MiniBoard";
 import { TileRack } from "./components/TileRack";
+import type { RackPreview, SwapFloat } from "./components/TileRack";
 import { BlankLetterPicker } from "./components/BlankLetterPicker";
 import { GameOverPanel } from "./components/GameOverPanel";
+import { PauseMenu } from "./components/PauseMenu";
+import { ComboExplainerModal } from "./components/ComboExplainerModal";
+import { UsernameForm } from "./components/UsernameForm";
+import { BoardViewport } from "./components/BoardViewport";
 import { useRushGame } from "./game/rush/useRushGame";
 import { useTileDrag } from "./game/rush/useTileDrag";
 import type { DragSource } from "./game/rush/useTileDrag";
 import { getBestLocalResult } from "./game/rush/localResults";
+import { loadProfile } from "./services/usernameService";
+import type { StoredProfile } from "./services/usernameService";
 import { BLANK_LETTER } from "./game/shared/bag";
 import { MINI_BOARD_SIZE } from "./game/shared/premiumSquares";
-import { getPlacedCells } from "./game/shared/validation";
+import { getPlacedCells, validateSubmitTurn } from "./game/shared/validation";
+import { scoreSubmittedWords } from "./game/shared/scoring";
+import { dictionary } from "./utils/dictionary";
 
 const TOAST_MS = 2400;
+const COMBO_EXPLAINED_KEY = "fwwweb.comboExplained.v1";
+const SWAP_TILE_STAGGER_MS = 380;
+const SWAP_COMMIT_EXTRA_MS = 450;
 
 interface PendingBlank {
   rackIndex: number;
   row: number;
   col: number;
 }
+
+const comboExplained = (): boolean => {
+  try {
+    return localStorage.getItem(COMBO_EXPLAINED_KEY) === "1";
+  } catch {
+    return true;
+  }
+};
+
+const markComboExplained = () => {
+  try {
+    localStorage.setItem(COMBO_EXPLAINED_KEY, "1");
+  } catch {
+    /* ignore */
+  }
+};
 
 export const App = () => {
   const game = useRushGame();
@@ -32,8 +60,18 @@ export const App = () => {
     savedRunAvailable,
   } = game;
 
+  const [profile, setProfile] = useState<StoredProfile | null>(() =>
+    loadProfile()
+  );
+  const [editingName, setEditingName] = useState(false);
+  const [showComboModal, setShowComboModal] = useState(false);
+  const [paused, setPaused] = useState(false);
   const [swapMode, setSwapMode] = useState(false);
   const [swapSelection, setSwapSelection] = useState<Set<number>>(new Set());
+  const [swapFloats, setSwapFloats] = useState<SwapFloat[]>([]);
+  const [rackPreview, setRackPreview] = useState<RackPreview | null>(null);
+  const swapAnimatingRef = useRef(false);
+  const swapTimeoutsRef = useRef<number[]>([]);
   const [pendingBlank, setPendingBlank] = useState<PendingBlank | null>(null);
 
   const boardWrapRef = useRef<HTMLDivElement>(null);
@@ -66,6 +104,14 @@ export const App = () => {
     return () => window.clearTimeout(id);
   }, [message, game.dismissMessage]);
 
+  // Clear any swap choreography timers on unmount.
+  useEffect(
+    () => () => {
+      swapTimeoutsRef.current.forEach((id) => window.clearTimeout(id));
+    },
+    []
+  );
+
   const isActive = state?.status === "active";
 
   const canDropOnCell = useCallback(
@@ -81,6 +127,7 @@ export const App = () => {
 
   const onDropOnBoard = useCallback(
     (source: DragSource, row: number, col: number): boolean => {
+      setRackPreview(null);
       if (!state || state.status !== "active") return false;
       if (source.type === "board") {
         return game.moveBoardTile(source.row, source.col, row, col);
@@ -101,6 +148,7 @@ export const App = () => {
 
   const onDropOnRack = useCallback(
     (source: DragSource, visibleIndex: number): boolean => {
+      setRackPreview(null);
       if (source.type === "board") {
         return game.returnTileToRack(source.row, source.col, visibleIndex);
       }
@@ -123,6 +171,7 @@ export const App = () => {
     canDropOnCell,
     onDropOnBoard,
     onDropOnRack,
+    onRackPreview: setRackPreview,
     onTap,
   });
 
@@ -131,11 +180,61 @@ export const App = () => {
     [state]
   );
 
+  /** Live playability + points preview for the current draft placements. */
+  const preview = useMemo(() => {
+    if (!state || state.status !== "active" || placedCount === 0) return null;
+    if (!dictionaryReady) return null;
+    const validation = validateSubmitTurn({
+      board: state.board,
+      isFirstTurn: state.isFirstTurn,
+      boardAtTurnStart: state.boardAtTurnStart,
+      dictionary,
+      boardSize: state.boardSize,
+    });
+    if (!validation.ok) {
+      return { valid: false as const, reason: validation.error.text };
+    }
+    const scoring = scoreSubmittedWords({
+      board: state.board,
+      newWords: validation.newWords,
+      premiumSquares: state.premiumSquares,
+      turnCount: state.turnCount,
+      placedCells: validation.placedCells,
+      bonusMode: "mini",
+    });
+    return {
+      valid: true as const,
+      points: scoring.turnScore,
+      words: validation.newWords.map((w) => w.word.toUpperCase()),
+    };
+  }, [state, placedCount, dictionaryReady]);
+
   const best = useMemo(
     () => getBestLocalResult(),
     // Recompute whenever a run ends.
     [state?.status]
   );
+
+  // ---------- pause ----------
+
+  const openPause = () => {
+    game.pauseClock();
+    setPaused(true);
+  };
+
+  const closePause = () => {
+    setPaused(false);
+    game.resumeClock();
+  };
+
+  const newGameFromPause = () => {
+    setPaused(false);
+    cancelSwap();
+    setPendingBlank(null);
+    game.startNewRun();
+  };
+
+  // ---------- swap ----------
 
   const startSwap = () => {
     game.returnAllDrafts();
@@ -144,18 +243,14 @@ export const App = () => {
   };
 
   const cancelSwap = () => {
+    if (swapAnimatingRef.current) return; // let the animation finish
     setSwapMode(false);
     setSwapSelection(new Set());
-  };
-
-  const confirmSwap = () => {
-    if (swapSelection.size > 0) {
-      game.swapTiles([...swapSelection]);
-    }
-    cancelSwap();
+    setSwapFloats([]);
   };
 
   const toggleSwapSelection = (rackIndex: number) => {
+    if (swapAnimatingRef.current) return;
     setSwapSelection((prev) => {
       const next = new Set(prev);
       if (next.has(rackIndex)) {
@@ -165,6 +260,68 @@ export const App = () => {
       }
       return next;
     });
+  };
+
+  /**
+   * Sequential swap choreography, matching the mobile app: tiles leave one at
+   * a time (the rack does NOT compact between them), each showing its penalty
+   * "M.0 × -V" floating up, then the engine commits the whole swap at once.
+   */
+  const confirmSwap = () => {
+    if (!state || swapSelection.size === 0 || swapAnimatingRef.current) return;
+    const indices = [...swapSelection].sort((a, b) => a - b);
+    const multiplier = state.swapCount + 1;
+    swapAnimatingRef.current = true;
+
+    indices.forEach((rackIndex, i) => {
+      const id = window.setTimeout(() => {
+        const tile = state.rack[rackIndex];
+        setSwapFloats((prev) => [
+          ...prev,
+          {
+            rackIndex,
+            label: `${multiplier}.0 × −${tile?.value ?? 0}`,
+          },
+        ]);
+      }, i * SWAP_TILE_STAGGER_MS);
+      swapTimeoutsRef.current.push(id);
+    });
+
+    const commitId = window.setTimeout(
+      () => {
+        swapAnimatingRef.current = false;
+        setSwapFloats([]);
+        setSwapMode(false);
+        setSwapSelection(new Set());
+        game.swapTiles(indices);
+      },
+      indices.length * SWAP_TILE_STAGGER_MS + SWAP_COMMIT_EXTRA_MS
+    );
+    swapTimeoutsRef.current.push(commitId);
+  };
+
+  const swapPenaltyMultiplier = state ? state.swapCount + 1 : 1;
+  const swapPenaltyPreview = state
+    ? [...swapSelection].reduce(
+        (sum, index) => sum + (state.rack[index]?.value ?? 0),
+        0
+      ) * swapPenaltyMultiplier
+    : 0;
+
+  // ---------- start / menu ----------
+
+  const requestStart = () => {
+    if (!comboExplained()) {
+      setShowComboModal(true);
+      return;
+    }
+    game.startNewRun();
+  };
+
+  const startFromComboModal = () => {
+    markComboExplained();
+    setShowComboModal(false);
+    game.startNewRun();
   };
 
   const handlePlayAgain = () => {
@@ -183,34 +340,63 @@ export const App = () => {
         {best ? (
           <p className="menu__best">Best score: {best.breakdown.finalScore}</p>
         ) : null}
+
+        {!profile || editingName ? (
+          <UsernameForm
+            initialValue={profile?.username ?? ""}
+            onSaved={(saved) => {
+              setProfile(saved);
+              setEditingName(false);
+            }}
+          />
+        ) : (
+          <p className="menu__player">
+            Playing as <strong>{profile.username}</strong>
+            {profile.verified ? "" : " (device-only)"}
+            <button
+              className="menu__change-name"
+              onClick={() => setEditingName(true)}
+            >
+              change
+            </button>
+          </p>
+        )}
+
         {savedRunAvailable ? (
           <>
-            <button className="btn btn--primary" onClick={game.resumeSavedRun}>
+            <button
+              className="btn btn--primary"
+              onClick={game.resumeSavedRun}
+              disabled={!profile}
+            >
               Resume Run
             </button>
-            <button
-              className="btn btn--danger"
-              onClick={game.discardSavedRun}
-            >
+            <button className="btn btn--danger" onClick={game.discardSavedRun}>
               Discard Saved Run
             </button>
           </>
         ) : (
           <button
             className="btn btn--primary"
-            onClick={game.startNewRun}
-            disabled={!dictionaryReady}
+            onClick={requestStart}
+            disabled={!dictionaryReady || !profile || editingName}
           >
             {dictionaryReady ? "Start Rush" : "Loading words…"}
           </button>
         )}
+
+        {showComboModal ? (
+          <ComboExplainerModal onStart={startFromComboModal} />
+        ) : null}
+
+        <div className="rotate-overlay">
+          <p>Rotate your phone — Rush plays in portrait.</p>
+        </div>
       </div>
     );
   }
 
   // ---------- game screen ----------
-
-  const swapPenaltyMultiplier = state.swapCount + 1;
 
   return (
     <div className="screen">
@@ -218,43 +404,99 @@ export const App = () => {
         remainingMs={remainingMs}
         score={runningScore}
         tilesRemaining={state.bag.length}
+        comboStreak={state.consistencyStreak}
+        onMenu={openPause}
       />
 
-      <div className="board-wrap" ref={boardWrapRef}>
+      <BoardViewport
+        wrapRef={boardWrapRef}
+        overlay={
+          message?.kind === "success" ? (
+            <div className="board-turn-banner" onClick={game.dismissMessage}>
+              <p className="board-turn-banner__title">
+                {message.title}
+                {message.turnPoints != null ? (
+                  <span className="board-turn-banner__points">
+                    {" "}
+                    +{message.turnPoints}
+                  </span>
+                ) : null}
+                {message.consistencyBonus ? (
+                  <span className="board-turn-banner__combo">
+                    {" "}
+                    🔥 COMBO +{message.consistencyBonus}
+                  </span>
+                ) : null}
+              </p>
+              <p className="board-turn-banner__text">
+                {message.text}
+                {message.scrabbleBonusMessage
+                  ? ` · ${message.scrabbleBonusMessage}`
+                  : ""}
+              </p>
+            </div>
+          ) : null
+        }
+      >
         <MiniBoard
           board={state.board}
           premiumSquares={state.premiumSquares}
           boardRef={drag.boardRef}
           onTilePointerDown={drag.startDrag}
-          interactive={isActive && !swapMode}
+          interactive={isActive && !swapMode && !paused}
         />
-      </div>
+      </BoardViewport>
 
       <div className="rack-area">
-        <TileRack
-          rack={state.rack}
-          usedRackIndices={usedRackIndices}
-          rackRef={drag.rackRef}
-          onTilePointerDown={drag.startDrag}
-          interactive={isActive}
-          swapMode={swapMode}
-          selectedIndices={swapSelection}
-          onToggleSelect={toggleSwapSelection}
-        />
+        {/* Fixed-height slot: the chip appearing never shifts the layout. */}
+        <div className="score-preview" aria-live="polite">
+          {preview ? (
+            preview.valid ? (
+              <span className="score-preview__chip score-preview__chip--ok">
+                ✓ {preview.words.join(", ")} · +{preview.points}
+              </span>
+            ) : (
+              <span className="score-preview__chip score-preview__chip--bad">
+                ✗ {preview.reason}
+              </span>
+            )
+          ) : null}
+        </div>
+
+        <div className={paused ? "rack-blur" : undefined}>
+          <TileRack
+            rack={state.rack}
+            usedRackIndices={usedRackIndices}
+            rackRef={drag.rackRef}
+            onTilePointerDown={drag.startDrag}
+            interactive={isActive && !paused}
+            swapMode={swapMode}
+            selectedIndices={swapSelection}
+            onToggleSelect={toggleSwapSelection}
+            swapFloats={swapFloats}
+            rackPreview={rackPreview}
+          />
+        </div>
 
         {swapMode ? (
           <>
             <p className="swap-hint">
-              Select tiles to swap · penalty ×{swapPenaltyMultiplier}
+              {swapSelection.size > 0
+                ? `Penalty: −${swapPenaltyPreview} pts (${swapPenaltyMultiplier}.0 × letter value)`
+                : `Select tiles to swap · multiplier ×${swapPenaltyMultiplier}`}
             </p>
             <div className="controls">
-              <button className="btn btn--ghost" onClick={cancelSwap}>
+              <button
+                className="btn btn--ghost"
+                onClick={cancelSwap}
+                disabled={swapFloats.length > 0}
+              >
                 Cancel
               </button>
               <button
                 className="btn btn--primary"
                 onClick={confirmSwap}
-                disabled={swapSelection.size === 0}
+                disabled={swapSelection.size === 0 || swapFloats.length > 0}
               >
                 Swap {swapSelection.size || ""}
               </button>
@@ -264,30 +506,40 @@ export const App = () => {
           <div className="controls">
             <button
               className="btn"
-              onClick={game.returnAllDrafts}
-              disabled={!isActive || placedCount === 0}
-            >
-              Recall
-            </button>
-            <button
-              className="btn"
               onClick={startSwap}
-              disabled={!isActive || state.bag.length === 0}
+              disabled={!isActive || paused || state.bag.length === 0}
             >
               Swap
             </button>
             <button
               className="btn btn--primary"
               onClick={game.submitWord}
-              disabled={!isActive || placedCount === 0 || !dictionaryReady}
+              disabled={!isActive || paused || placedCount === 0 || !dictionaryReady}
             >
-              Submit
+              {preview?.valid ? `Submit +${preview.points}` : "Submit"}
             </button>
+            {placedCount > 0 ? (
+              <button
+                className="btn"
+                onClick={game.returnAllDrafts}
+                disabled={!isActive || paused}
+              >
+                Recall
+              </button>
+            ) : (
+              <button
+                className="btn"
+                onClick={game.shuffleRack}
+                disabled={!isActive || paused || state.rack.length < 2}
+              >
+                Shuffle
+              </button>
+            )}
           </div>
         )}
       </div>
 
-      {message ? (
+      {message && message.kind === "error" ? (
         <div
           className={`toast${message.kind === "error" ? " toast--error" : ""}`}
           onClick={game.dismissMessage}
@@ -297,14 +549,16 @@ export const App = () => {
             {message.turnPoints != null ? (
               <span className="toast__points"> +{message.turnPoints}</span>
             ) : null}
+            {message.consistencyBonus ? (
+              <span className="toast__combo">
+                🔥 COMBO +{message.consistencyBonus}
+              </span>
+            ) : null}
           </p>
           <p className="toast__text">
             {message.text}
             {message.scrabbleBonusMessage
               ? ` · ${message.scrabbleBonusMessage}`
-              : ""}
-            {message.consistencyBonus
-              ? ` · Combo +${message.consistencyBonus}`
               : ""}
           </p>
         </div>
@@ -325,6 +579,10 @@ export const App = () => {
         />
       ) : null}
 
+      {paused && isActive ? (
+        <PauseMenu onResume={closePause} onNewGame={newGameFromPause} />
+      ) : null}
+
       {state.status === "expired" && state.finalBreakdown ? (
         <GameOverPanel
           breakdown={state.finalBreakdown}
@@ -333,6 +591,10 @@ export const App = () => {
           onPlayAgain={handlePlayAgain}
         />
       ) : null}
+
+      <div className="rotate-overlay">
+        <p>Rotate your phone — Rush plays in portrait.</p>
+      </div>
     </div>
   );
 };
