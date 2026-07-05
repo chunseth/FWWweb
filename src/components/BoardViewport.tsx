@@ -45,6 +45,7 @@ export const BoardViewport = ({
       startTy: number;
     },
     panning: false,
+    dragLocked: false,
     panLast: { x: 0, y: 0 },
     moved: false,
     lastTap: { time: 0, x: 0, y: 0 },
@@ -85,6 +86,7 @@ export const BoardViewport = ({
     };
 
     const onPointerDown = (e: PointerEvent) => {
+      if (s.dragLocked) return;
       s.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       s.moved = false;
       outer.setPointerCapture(e.pointerId);
@@ -107,6 +109,7 @@ export const BoardViewport = ({
     };
 
     const onPointerMove = (e: PointerEvent) => {
+      if (s.dragLocked) return;
       const prev = s.pointers.get(e.pointerId);
       if (!prev) return;
       if (Math.hypot(e.clientX - prev.x, e.clientY - prev.y) > 4) {
@@ -183,6 +186,15 @@ export const BoardViewport = ({
     };
 
     const resetListener = () => reset();
+    const dragLockListener = (event: Event) => {
+      const locked = Boolean((event as CustomEvent<boolean>).detail);
+      s.dragLocked = locked;
+      if (locked) {
+        s.pointers.clear();
+        s.pinch = null;
+        s.panning = false;
+      }
+    };
 
     outer.addEventListener("pointerdown", onPointerDown);
     outer.addEventListener("pointermove", onPointerMove);
@@ -190,6 +202,7 @@ export const BoardViewport = ({
     outer.addEventListener("pointercancel", onPointerCancel);
     outer.addEventListener("wheel", onWheel, { passive: false });
     outer.addEventListener("boardzoom:reset", resetListener);
+    outer.addEventListener("boarddrag:lock", dragLockListener);
     return () => {
       outer.removeEventListener("pointerdown", onPointerDown);
       outer.removeEventListener("pointermove", onPointerMove);
@@ -197,6 +210,7 @@ export const BoardViewport = ({
       outer.removeEventListener("pointercancel", onPointerCancel);
       outer.removeEventListener("wheel", onWheel);
       outer.removeEventListener("boardzoom:reset", resetListener);
+      outer.removeEventListener("boarddrag:lock", dragLockListener);
     };
   }, [wrapRef]);
 

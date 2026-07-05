@@ -86,6 +86,12 @@ export const useTileDrag = (targets: DropTargets): TileDragApi => {
   const targetsRef = useRef(targets);
   targetsRef.current = targets;
 
+  const setBoardDragLocked = useCallback((locked: boolean) => {
+    boardRef.current
+      ?.closest(".board-viewport")
+      ?.dispatchEvent(new CustomEvent("boarddrag:lock", { detail: locked }));
+  }, []);
+
   const cleanup = useCallback((drag: ActiveDrag, revealSource = true) => {
     if (drag.rafId != null) cancelAnimationFrame(drag.rafId);
     if (drag.pickupTimerId != null) window.clearTimeout(drag.pickupTimerId);
@@ -106,8 +112,9 @@ export const useTileDrag = (targets: DropTargets): TileDragApi => {
     if (drag.previewRackIndex != null) {
       targetsRef.current.onRackPreview(null);
     }
+    setBoardDragLocked(false);
     activeRef.current = null;
-  }, []);
+  }, [setBoardDragLocked]);
 
   useEffect(
     () => () => {
@@ -345,7 +352,7 @@ export const useTileDrag = (targets: DropTargets): TileDragApi => {
       const originRect = sourceEl.getBoundingClientRect();
 
       // Ghost: the actual tile face, carried under the pointer.
-    const ghost = sourceEl.cloneNode(true) as HTMLElement;
+      const ghost = sourceEl.cloneNode(true) as HTMLElement;
       ghost.classList.add("tile--ghost");
       ghost.style.position = "fixed";
       ghost.style.left = `${originRect.left}px`;
@@ -387,6 +394,7 @@ export const useTileDrag = (targets: DropTargets): TileDragApi => {
         previewRackIndex: null,
       };
       activeRef.current = drag;
+      setBoardDragLocked(true);
 
       event.preventDefault();
       sourceEl.setPointerCapture(event.pointerId);
