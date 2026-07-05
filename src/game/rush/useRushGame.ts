@@ -38,6 +38,7 @@ import {
   swapTiles as engineSwapTiles,
 } from "./rushEngine";
 import type { RushRunConfig, SubmitDetail } from "./rushEngine";
+import { generateRushSeed } from "./rushSeed";
 import {
   createRushRunOnServer,
   submitRushRunToServer,
@@ -508,18 +509,13 @@ export const useRushGame = (
     };
 
     if (!isBackendConfigured()) {
-      mountFreshRun(
-        `${Date.now().toString(36)}-${Math.floor(
-          Math.random() * 1_000_000
-        ).toString(36)}`,
-        Date.now()
-      );
+      mountFreshRun(generateRushSeed(), Date.now());
       setStartingDuration(null);
       return;
     }
 
     // Mount immediately so rack, board, and timer reset while the server run loads.
-    mountFreshRun(`local-${Date.now().toString(36)}`, Date.now(), {
+    mountFreshRun(generateRushSeed(), Date.now(), {
       eligibility: "local_only",
       runId: null,
     });

@@ -15,6 +15,7 @@ import { getSupabaseClient } from "./supabaseClient";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { RushTurnEntry } from "../game/shared/types";
 import type { RushRunConfig } from "../game/rush/rushEngine";
+import { isRushSeed } from "../game/rush/rushSeed";
 
 export interface ServerRun {
   runId: string;
@@ -65,8 +66,7 @@ export const createRushRunOnServer = async (
     if (
       error ||
       typeof data?.runId !== "string" ||
-      typeof data?.seed !== "string" ||
-      data.seed.length < 8
+      !isRushSeed(data?.seed)
     ) {
       return null;
     }

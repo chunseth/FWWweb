@@ -25,6 +25,7 @@ export {
   CLASSIC_RUSH_DURATION_MS,
   RUSH_SUBMIT_GRACE_MS,
 } from "../game/rush/rushEngine";
+export { generateRushSeed } from "../game/rush/rushSeed";
 
 export type {
   RushSnapshot,

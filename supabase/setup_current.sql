@@ -47,7 +47,7 @@ create table if not exists public.web_rush_runs (
   constraint web_rush_runs_status_check
     check (status in ('active', 'submitted', 'expired', 'invalid')),
   constraint web_rush_runs_seed_length_check
-    check (char_length(seed) between 8 and 64)
+    check (char_length(seed) between 6 and 64)
 );
 
 create index if not exists web_rush_runs_player_started_idx

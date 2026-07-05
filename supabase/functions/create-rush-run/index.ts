@@ -16,6 +16,7 @@ import {
   CLASSIC_RUSH_DURATION_SECONDS,
   RUSH_DURATION_SECONDS,
   RUSH_SUBMIT_GRACE_MS,
+  generateRushSeed,
 } from "../_shared/engine.mjs";
 
 const MAX_RUNS_PER_HOUR = 30;
@@ -72,10 +73,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // Server-generated seed: the client cannot choose its own bag order.
-    const bytes = crypto.getRandomValues(new Uint8Array(16));
-    const seed = Array.from(bytes)
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
+    const seed = generateRushSeed();
 
     const startedAt = new Date();
     const deadlineAt = new Date(
