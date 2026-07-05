@@ -7,6 +7,7 @@ import { BlankLetterPicker } from "./components/BlankLetterPicker";
 import { GameOverPanel } from "./components/GameOverPanel";
 import { PauseMenu } from "./components/PauseMenu";
 import { ComboExplainerModal } from "./components/ComboExplainerModal";
+import { AppStoreModal } from "./components/AppStoreModal";
 import { UsernameForm } from "./components/UsernameForm";
 import { BoardViewport } from "./components/BoardViewport";
 import { resumeRunLabel } from "./game/rush/modeLabels";
@@ -25,6 +26,7 @@ import { dictionary } from "./utils/dictionary";
 
 const TOAST_MS = 2400;
 const COMBO_EXPLAINED_KEY = "fwwweb.comboExplained.v1";
+const APP_STORE_DISMISSED_KEY = "fwwweb.appStoreDismissed.v1";
 const SWAP_TILE_STAGGER_MS = 380;
 const SWAP_COMMIT_EXTRA_MS = 450;
 const MUSIC_URL = "/friendswwords.mp3";
@@ -56,6 +58,22 @@ const markComboExplained = () => {
   }
 };
 
+const appStoreDismissed = (): boolean => {
+  try {
+    return localStorage.getItem(APP_STORE_DISMISSED_KEY) === "1";
+  } catch {
+    return true;
+  }
+};
+
+const markAppStoreDismissed = () => {
+  try {
+    localStorage.setItem(APP_STORE_DISMISSED_KEY, "1");
+  } catch {
+    /* ignore */
+  }
+};
+
 export const App = () => {
   const game = useRushGame();
   const {
@@ -78,6 +96,11 @@ export const App = () => {
   );
   const [editingName, setEditingName] = useState(false);
   const [showComboModal, setShowComboModal] = useState(false);
+  const [showAppStoreModal, setShowAppStoreModal] = useState(false);
+  const dismissAppStoreModal = useCallback(() => {
+    markAppStoreDismissed();
+    setShowAppStoreModal(false);
+  }, []);
   const [pendingStartDuration, setPendingStartDuration] = useState<300 | 600>(300);
   const [paused, setPaused] = useState(false);
   const [musicEnabled, setMusicEnabled] = useState(true);
@@ -176,6 +199,15 @@ export const App = () => {
   );
 
   const isActive = state?.status === "active";
+
+  useEffect(() => {
+    if (state?.status === "expired" && !appStoreDismissed()) {
+      setShowAppStoreModal(true);
+    }
+    if (state?.status !== "expired") {
+      setShowAppStoreModal(false);
+    }
+  }, [state?.status]);
 
   useEffect(() => {
     if (state?.status === "expired") {
@@ -298,10 +330,21 @@ export const App = () => {
     };
   }, [state, placedCount, dictionaryReady]);
 
-  const best = useMemo(
-    () => getBestLocalResult(),
-    // Recompute whenever a run ends.
+  const bestMini = useMemo(
+    () => getBestLocalResult(undefined, 300),
     [state?.status]
+  );
+  const bestClassic = useMemo(
+    () => getBestLocalResult(undefined, 600),
+    [state?.status]
+  );
+  const modeBest = useMemo(
+    () =>
+      getBestLocalResult(
+        undefined,
+        state?.durationSeconds === 600 ? 600 : 300
+      ),
+    [state?.status, state?.durationSeconds]
   );
   const playUrl = useMemo(
     () =>
@@ -606,9 +649,16 @@ export const App = () => {
           <p className="menu__subtitle">
             5-Minute Mini or 10-Minute Classic
           </p>
-          {best ? (
-            <p className="menu__best">Best score: {best.breakdown.finalScore}</p>
-          ) : null}
+          <div className="menu__bests">
+            <p className="menu__best">
+              5-Minute Mini best:{" "}
+              <strong>{bestMini?.breakdown.finalScore ?? "—"}</strong>
+            </p>
+            <p className="menu__best">
+              10-Minute Classic best:{" "}
+              <strong>{bestClassic?.breakdown.finalScore ?? "—"}</strong>
+            </p>
+          </div>
 
           {!profile || editingName ? (
             <UsernameForm
@@ -889,20 +939,25 @@ export const App = () => {
       ) : null}
 
       {state.status === "expired" && state.finalBreakdown && !startingRun ? (
-        <GameOverPanel
-          breakdown={state.finalBreakdown}
-          wordCount={state.wordCount}
-          best={best}
-          syncState={syncState}
-          board={state.board}
-          premiumSquares={state.premiumSquares}
-          playUrl={playUrl}
-          rank={game.submittedRank}
-          syncDetail={game.submitError}
-          onShowLeaderboard={isBackendConfigured() ? openLeaderboard : null}
-          onPlayAgain={handlePlayAgain}
-          onMainMenu={handleGameOverMainMenu}
-        />
+        <>
+          <GameOverPanel
+            breakdown={state.finalBreakdown}
+            wordCount={state.wordCount}
+            best={modeBest}
+            syncState={syncState}
+            board={state.board}
+            premiumSquares={state.premiumSquares}
+            playUrl={playUrl}
+            rank={game.submittedRank}
+            syncDetail={game.submitError}
+            onShowLeaderboard={isBackendConfigured() ? openLeaderboard : null}
+            onPlayAgain={handlePlayAgain}
+            onMainMenu={handleGameOverMainMenu}
+          />
+          {showAppStoreModal ? (
+            <AppStoreModal onDismiss={dismissAppStoreModal} />
+          ) : null}
+        </>
       ) : null}
 
       <div className="rotate-overlay">

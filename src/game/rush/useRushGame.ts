@@ -370,6 +370,7 @@ export const useRushGame = (
           breakdown: finished.finalBreakdown,
           wordCount: finished.wordCount,
           turnCount: finished.turnCount,
+          runDurationSeconds: finished.durationSeconds === 600 ? 600 : 300,
         });
         submitFinishedRun(finished);
       }

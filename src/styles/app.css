@@ -112,6 +112,13 @@ button:disabled {
   font-size: 16px;
 }
 
+.menu__bests {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 12px;
+}
+
 .menu__best {
   color: var(--accent);
   font-size: 15px;
@@ -587,6 +594,10 @@ button:disabled {
   padding: 16px;
 }
 
+.modal-backdrop--promo {
+  z-index: 1150;
+}
+
 .modal {
   background: var(--bg-raised);
   border: 1px solid var(--line);
@@ -944,6 +955,42 @@ button:disabled {
 
 .combo-explainer__note {
   font-size: 13.5px;
+}
+
+/* ---------- app store promo ---------- */
+
+.modal--app-store {
+  text-align: center;
+}
+
+.app-store-modal__icon {
+  width: 112px;
+  height: 112px;
+  border-radius: 22px;
+  object-fit: cover;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.28);
+  margin: 0 auto 16px;
+  display: block;
+}
+
+.app-store-modal__text {
+  margin: 0 0 18px;
+  font-size: 17px;
+  line-height: 1.45;
+  color: var(--text);
+}
+
+.app-store-modal__actions {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.app-store-modal__actions .btn {
+  width: 100%;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .toast__combo {

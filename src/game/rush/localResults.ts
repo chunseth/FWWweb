@@ -20,6 +20,8 @@ export interface LocalRushResult {
   breakdown: RushScoreBreakdown;
   wordCount: number;
   turnCount: number;
+  /** Run length: 300 mini or 600 classic. Omitted on older saved results. */
+  runDurationSeconds?: 300 | 600;
 }
 
 const defaultStorage = (): StorageLike | null => {
@@ -68,6 +70,13 @@ export const saveLocalResult = (
   }
 };
 
+const getRunDurationSeconds = (result: LocalRushResult): 300 | 600 => {
+  if (result.runDurationSeconds === 600) return 600;
+  if (result.runDurationSeconds === 300) return 300;
+  // Legacy saves only stored elapsed seconds on the breakdown.
+  return result.breakdown.durationSeconds === 600 ? 600 : 300;
+};
+
 export const getBestLocalResult = (
   storage: StorageLike | null = defaultStorage(),
   durationSeconds?: number
@@ -76,7 +85,7 @@ export const getBestLocalResult = (
   for (const result of loadLocalResults(storage)) {
     if (
       typeof durationSeconds === "number" &&
-      result.breakdown.durationSeconds !== durationSeconds
+      getRunDurationSeconds(result) !== durationSeconds
     ) {
       continue;
     }

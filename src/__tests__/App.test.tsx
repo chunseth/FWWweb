@@ -22,6 +22,7 @@ const seedProfile = () => {
     JSON.stringify({ username: "TestPlayer", verified: false, savedAtMs: 1 })
   );
   localStorage.setItem("fwwweb.comboExplained.v1", "1");
+  localStorage.setItem("fwwweb.appStoreDismissed.v1", "1");
 };
 
 describe("App", () => {
@@ -59,6 +60,15 @@ describe("App", () => {
     });
     expect(document.querySelectorAll(".cell")).toHaveLength(121);
     expect(localStorage.getItem("fwwweb.comboExplained.v1")).toBe("1");
+  });
+
+  it("does not show the app store promo on the main menu", async () => {
+    localStorage.setItem(
+      PROFILE_KEY,
+      JSON.stringify({ username: "TestPlayer", verified: false, savedAtMs: 1 })
+    );
+    render(<App />);
+    expect(screen.queryByText(/thanks for playing the demo/i)).toBeNull();
   });
 
   it("renders the menu and starts a run when already set up", async () => {
