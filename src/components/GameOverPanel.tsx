@@ -14,6 +14,8 @@ interface GameOverPanelProps {
   playUrl: string;
   /** Global rank of the player's personal best (server-confirmed). */
   rank: number | null;
+  /** Server rejection reason, shown with the "couldn't verify" sync line. */
+  syncDetail?: string | null;
   /** Navigate to the leaderboard page; null hides the button. */
   onShowLeaderboard: (() => void) | null;
   onPlayAgain: () => void;
@@ -30,8 +32,13 @@ const SYNC_TEXT: Record<RushSyncState, string> = {
 };
 
 const SHARE_SIZE = 1200;
-const BOARD_SIZE = 792;
-const BOARD_CELLS = 11;
+const BOARD_PX = 792;
+
+/** Human-readable mode, derived from the board itself. */
+const getModeLabel = (board: MiniBoard): string =>
+  board.length === 15
+    ? "10-Minute Classic Rush · 15×15"
+    : "5-Minute Mini Rush · 11×11";
 const PREMIUM_COLORS: Record<PremiumSquareType, string> = {
   tw: "#c94f4f",
   dw: "#d98243",
@@ -91,6 +98,13 @@ const buildShareImage = ({
       return;
     }
 
+    // The board itself tells us the mode: 11x11 mini or 15x15 classic.
+    // Every tile metric scales from the cell size so the FULL board renders
+    // for both modes.
+    const cells = Math.max(board.length, 1);
+    const cell = BOARD_PX / cells;
+    const modeLabel = getModeLabel(board);
+
     ctx.fillStyle = "#16202b";
     ctx.fillRect(0, 0, SHARE_SIZE, SHARE_SIZE);
 
@@ -105,17 +119,24 @@ const buildShareImage = ({
 
     ctx.fillStyle = "#93a5b8";
     ctx.font = "700 26px Avenir Next, Segoe UI, sans-serif";
-    ctx.fillText(`${wordCount} words in 5-Minute Rush`, SHARE_SIZE / 2, 198);
+    ctx.fillText(`${wordCount} words in ${modeLabel}`, SHARE_SIZE / 2, 198);
 
-    const boardX = (SHARE_SIZE - BOARD_SIZE) / 2;
+    const boardX = (SHARE_SIZE - BOARD_PX) / 2;
     const boardY = 244;
-    const cell = BOARD_SIZE / BOARD_CELLS;
-    drawRoundRect(ctx, boardX - 12, boardY - 12, BOARD_SIZE + 24, BOARD_SIZE + 24, 28);
+    drawRoundRect(ctx, boardX - 12, boardY - 12, BOARD_PX + 24, BOARD_PX + 24, 28);
     ctx.fillStyle = "#1d2733";
     ctx.fill();
 
-    for (let row = 0; row < BOARD_CELLS; row += 1) {
-      for (let col = 0; col < BOARD_CELLS; col += 1) {
+    // Cell-relative metrics (tuned to match the old 11x11 look: cell=72px).
+    const tileInset = cell * 0.1;
+    const tileRadius = cell * 0.125;
+    const letterFont = Math.round(cell * 0.47);
+    const letterBaseline = cell * 0.62;
+    const valueFont = Math.max(9, Math.round(cell * 0.21));
+    const premiumFont = Math.max(10, Math.round(cell * 0.25));
+
+    for (let row = 0; row < cells; row += 1) {
+      for (let col = 0; col < cells; col += 1) {
         const x = boardX + col * cell;
         const y = boardY + row * cell;
         const tile = board[row]?.[col];
@@ -125,21 +146,32 @@ const buildShareImage = ({
         ctx.fillRect(x + 2, y + 2, cell - 4, cell - 4);
 
         if (tile) {
-          drawRoundRect(ctx, x + 7, y + 7, cell - 14, cell - 14, 9);
+          drawRoundRect(
+            ctx,
+            x + tileInset,
+            y + tileInset,
+            cell - tileInset * 2,
+            cell - tileInset * 2,
+            tileRadius
+          );
           ctx.fillStyle = tile.isBlank ? "#ffefc9" : "#f4e5c3";
           ctx.fill();
           ctx.fillStyle = "#4a3418";
           ctx.textAlign = "center";
-          ctx.font = "800 34px Avenir Next, Segoe UI, sans-serif";
-          ctx.fillText(tile.letter.toUpperCase(), x + cell / 2, y + 45);
-          ctx.font = "800 15px Avenir Next, Segoe UI, sans-serif";
+          ctx.font = `800 ${letterFont}px Avenir Next, Segoe UI, sans-serif`;
+          ctx.fillText(tile.letter.toUpperCase(), x + cell / 2, y + letterBaseline);
+          ctx.font = `800 ${valueFont}px Avenir Next, Segoe UI, sans-serif`;
           ctx.textAlign = "right";
-          ctx.fillText(String(tile.value), x + cell - 15, y + cell - 13);
+          ctx.fillText(
+            String(tile.value),
+            x + cell - cell * 0.2,
+            y + cell - cell * 0.17
+          );
         } else if (premium) {
           ctx.fillStyle = "rgba(255,255,255,0.82)";
           ctx.textAlign = "center";
-          ctx.font = "800 18px Avenir Next, Segoe UI, sans-serif";
-          ctx.fillText(PREMIUM_LABELS[premium], x + cell / 2, y + cell / 2 + 6);
+          ctx.font = `800 ${premiumFont}px Avenir Next, Segoe UI, sans-serif`;
+          ctx.fillText(PREMIUM_LABELS[premium], x + cell / 2, y + cell / 2 + premiumFont * 0.35);
         }
       }
     }
@@ -195,6 +227,7 @@ export const GameOverPanel = ({
   premiumSquares,
   playUrl,
   rank,
+  syncDetail = null,
   onShowLeaderboard,
   onPlayAgain,
 }: GameOverPanelProps) => {
@@ -234,7 +267,9 @@ export const GameOverPanel = ({
       if (navigator.canShare?.({ files: [file] })) {
         await navigator.share({
           title: "Friends With Words score",
-          text: `I scored ${breakdown.finalScore} in Friends With Words. Play here: ${playUrl}`,
+          text: `I scored ${breakdown.finalScore} in ${getModeLabel(
+            board
+          )} on Friends With Words. Play here: ${playUrl}`,
           files: [file],
         });
         setShareStatus("Shared.");
@@ -279,7 +314,10 @@ export const GameOverPanel = ({
             </div>
           ) : null}
         </div>
-        <p className="gameover__sync">{SYNC_TEXT[syncState]}</p>
+        <p className="gameover__sync">
+          {SYNC_TEXT[syncState]}
+          {syncState === "rejected" && syncDetail ? ` (${syncDetail})` : ""}
+        </p>
         <div className="gameover__actions">
           <button className="btn" onClick={handleShareScore}>
             Share Score

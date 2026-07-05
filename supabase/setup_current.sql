@@ -2,10 +2,11 @@
 -- FWWweb: one-shot setup for the hardened Rush backend (5-min + 10-min).
 --
 -- Paste this whole file into the Supabase Dashboard -> SQL Editor -> Run.
--- Idempotent: safe to re-run. Equivalent to migrations 20260704090000,
--- 20260704090002, and 20260704090003. The stage-2 rush_scores lockdown is
--- intentionally NOT included — apply it only after mobile also uses the
--- server path.
+-- Idempotent: safe to re-run, and it also UPGRADES databases created before
+-- classic mode (re-asserts the duration constraint that `create table if
+-- not exists` cannot change). Equivalent to migrations 20260704090000,
+-- 20260704090002, 20260704090003, and 20260704090004. The stage-2
+-- rush_scores lockdown is intentionally NOT included.
 -- ============================================================================
 
 -- Drop the original one-argument RPC overloads (pre-duration-tab versions).
@@ -143,3 +144,18 @@ $$;
 revoke all on function public.get_rush_rank(integer, integer) from public;
 grant execute on function public.get_rush_rank(integer, integer)
   to anon, authenticated;
+
+-- Allow 10-minute classic runs on web_rush_runs.
+--
+-- `create table if not exists` never updates constraints on an existing
+-- table, so databases created before classic mode still enforce
+-- duration_seconds = 300 and reject classic run creation. Re-assert the
+-- constraint explicitly. Idempotent.
+
+alter table public.web_rush_runs
+  drop constraint if exists web_rush_runs_duration_check;
+
+alter table public.web_rush_runs
+  add constraint web_rush_runs_duration_check
+  check (duration_seconds in (300, 600));
+

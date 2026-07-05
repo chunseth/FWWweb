@@ -869,6 +869,7 @@ export const App = () => {
           premiumSquares={state.premiumSquares}
           playUrl={playUrl}
           rank={game.submittedRank}
+          syncDetail={game.submitError}
           onShowLeaderboard={isBackendConfigured() ? openLeaderboard : null}
           onPlayAgain={handlePlayAgain}
         />

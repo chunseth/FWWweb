@@ -97,6 +97,8 @@ export interface UseRushGameResult {
   syncState: RushSyncState;
   /** Global rank of the player's personal best, once the server confirms it. */
   submittedRank: number | null;
+  /** Server rejection reason (e.g. "replay_rejected"), for the sync line. */
+  submitError: string | null;
   startNewRun: (config?: Partial<RushRunConfig>) => Promise<void>;
   resumeSavedRun: () => boolean;
   discardSavedRun: () => void;
@@ -146,6 +148,7 @@ export const useRushGame = (
   const [starting, setStarting] = useState(false);
   const [syncState, setSyncState] = useState<RushSyncState>("idle");
   const [submittedRank, setSubmittedRank] = useState<number | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const stateRef = useRef<RushSnapshot | null>(null);
   stateRef.current = state;
@@ -266,6 +269,7 @@ export const useRushGame = (
           setSubmittedRank(outcome.rank);
           setSyncState("submitted");
         } else if (outcome.status === "rejected") {
+          setSubmitError(outcome.reason);
           setSyncState("rejected");
         } else {
           enqueueSubmission({
@@ -365,6 +369,7 @@ export const useRushGame = (
     setMessage(null);
     setSyncState("idle");
     setSubmittedRank(null);
+    setSubmitError(null);
     setRemainingMs(getRushDurationMs(run));
     setSavedRunAvailable(false);
     setState(run);
@@ -637,6 +642,7 @@ export const useRushGame = (
     starting,
     syncState,
     submittedRank,
+    submitError,
     startNewRun,
     resumeSavedRun,
     discardSavedRun,
