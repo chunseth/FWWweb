@@ -83,6 +83,42 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /submit/i })).toBeTruthy();
   });
 
+  it("shows the current mode on New Game in the pause menu", async () => {
+    seedProfile();
+    render(<App />);
+    const start = await screen.findByRole("button", { name: /5-minute mini rush/i });
+    await vi.waitFor(() => {
+      expect((start as HTMLButtonElement).disabled).toBe(false);
+    });
+    await act(async () => {
+      fireEvent.click(start);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /menu/i }));
+    expect(
+      screen.getByRole("button", { name: /new game · 5-minute mini/i })
+    ).toBeTruthy();
+  });
+
+  it("returns to the main menu from pause", async () => {
+    seedProfile();
+    render(<App />);
+    const start = await screen.findByRole("button", { name: /5-minute mini rush/i });
+    await vi.waitFor(() => {
+      expect((start as HTMLButtonElement).disabled).toBe(false);
+    });
+    await act(async () => {
+      fireEvent.click(start);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /menu/i }));
+    fireEvent.click(screen.getByRole("button", { name: /main menu/i }));
+
+    expect(await screen.findByRole("button", { name: /resume run/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /discard saved run/i })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /5-minute mini rush/i })).toBeNull();
+  });
+
   it("pauses from the menu button and resumes", async () => {
     seedProfile();
     render(<App />);

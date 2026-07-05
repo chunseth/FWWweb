@@ -410,9 +410,13 @@ export const submitTurn = (
       row,
       col,
       rackIndex: tile.rackIndex ?? -1,
-      id: rackTile?.id,
-      letter: rackTile?.letter ?? (tile.isBlank ? BLANK_LETTER : tile.letter),
-      value: rackTile?.value ?? tile.value,
+      // Board tiles keep the stable id from placement; prefer it over rack lookup
+      // in case rackIndex and rack order have diverged (shuffle/reorder).
+      id: tile.id ?? rackTile?.id,
+      letter: tile.isBlank
+        ? rackTile?.letter ?? BLANK_LETTER
+        : tile.letter ?? rackTile?.letter,
+      value: tile.value ?? rackTile?.value,
     };
     if (tile.isBlank) placement.blankLetter = tile.letter;
     return placement;
@@ -799,4 +803,32 @@ export const replayJournal = (
   }
 
   return { ok: true, state, error: null };
+};
+
+/**
+ * Rebuild rack/bag/RNG from the journal so resumed autosaves cannot carry a
+ * corrupted randomState from pre-fix cosmetic shuffles.
+ */
+export const reconcileSnapshotFromJournal = (
+  snapshot: RushSnapshot,
+  dictionary: DictionaryLike
+): RushSnapshot | null => {
+  if (snapshot.journal.length === 0) return snapshot;
+  const replay = replayJournal(
+    snapshot.seed,
+    snapshot.journal,
+    dictionary,
+    snapshot.startedAtWallMs,
+    { durationSeconds: snapshot.durationSeconds }
+  );
+  if (!replay.ok || !replay.state) return null;
+  return {
+    ...replay.state,
+    runId: snapshot.runId,
+    eligibility: snapshot.eligibility,
+    elapsedMs: snapshot.elapsedMs,
+    startedAtWallMs: snapshot.startedAtWallMs,
+    status: snapshot.status,
+    finalBreakdown: snapshot.finalBreakdown,
+  };
 };

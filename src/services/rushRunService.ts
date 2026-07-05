@@ -122,7 +122,12 @@ export const submitRushRunToServer = async (
         let reason = `http_${status}`;
         try {
           const body = await response!.json();
-          if (typeof body?.error === "string") reason = body.error;
+          if (typeof body?.error === "string") {
+            reason =
+              typeof body?.detail === "string"
+                ? `${body.error}: ${body.detail}`
+                : body.error;
+          }
         } catch {
           /* keep http_ code */
         }

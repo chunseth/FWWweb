@@ -801,9 +801,11 @@ button:disabled {
   border-radius: 8px;
   font-size: 14px;
   font-weight: 800;
-  color: var(--text);
+  color: var(--text-dim);
+  background: rgba(22, 32, 43, 0.72);
 }
 
+.pause__music-toggle--on,
 .pause__music-toggle[aria-pressed="true"] {
   color: #2b1a00;
   background: var(--accent-strong);
@@ -819,6 +821,23 @@ button:disabled {
   flex: 1;
   min-width: 0;
   accent-color: var(--accent-strong);
+}
+
+.pause__volume--off {
+  opacity: 0.72;
+}
+
+.pause__volume--off span,
+.pause__volume--off strong {
+  color: #6f7f92;
+}
+
+.pause__volume--off input {
+  accent-color: #6f7f92;
+  opacity: 0.55;
+  filter: grayscale(0.85);
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 .pause__volume strong {

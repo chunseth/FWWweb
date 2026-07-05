@@ -144,10 +144,11 @@ export const extractDraftPlacements = (
           row,
           col,
           rackIndex: tile.rackIndex,
-          id: rackTile?.id,
-          letter:
-            rackTile?.letter ?? (tile.isBlank ? BLANK_LETTER : tile.letter),
-          value: rackTile?.value ?? tile.value,
+          id: tile.id ?? rackTile?.id,
+          letter: tile.isBlank
+            ? rackTile?.letter ?? BLANK_LETTER
+            : tile.letter ?? rackTile?.letter,
+          value: tile.value ?? rackTile?.value,
         };
         if (tile.isBlank) placement.blankLetter = tile.letter;
         placements.push(placement);

@@ -9,6 +9,7 @@ import { PauseMenu } from "./components/PauseMenu";
 import { ComboExplainerModal } from "./components/ComboExplainerModal";
 import { UsernameForm } from "./components/UsernameForm";
 import { BoardViewport } from "./components/BoardViewport";
+import { resumeRunLabel } from "./game/rush/modeLabels";
 import { useRushGame } from "./game/rush/useRushGame";
 import { useTileDrag } from "./game/rush/useTileDrag";
 import type { DragSource } from "./game/rush/useTileDrag";
@@ -65,9 +66,12 @@ export const App = () => {
     message,
     dictionaryReady,
     savedRunAvailable,
-    starting,
+    savedRunDurationSeconds,
+    startingDuration,
     syncState,
   } = game;
+
+  const startingRun = startingDuration !== null;
 
   const [profile, setProfile] = useState<StoredProfile | null>(() =>
     loadProfile()
@@ -307,7 +311,33 @@ export const App = () => {
     []
   );
 
-  // ---------- pause ----------
+  // ---------- pause / navigation ----------
+
+  const resetGameUi = useCallback(() => {
+    setPaused(false);
+    setPendingBlank(null);
+    setRackPreview(null);
+    if (!swapAnimatingRef.current) {
+      setSwapMode(false);
+      setSwapSelection(new Set());
+      setSwapFloats([]);
+    }
+  }, []);
+
+  const handleMainMenu = useCallback(() => {
+    resetGameUi();
+    pauseMusic();
+    game.goToMainMenu();
+  }, [game, resetGameUi]);
+
+  const handleNewGameFromPause = useCallback(() => {
+    resetGameUi();
+    setPaused(false);
+    playMusic();
+    void game.startNewRun({
+      durationSeconds: state?.durationSeconds === 600 ? 600 : 300,
+    });
+  }, [game, resetGameUi, state?.durationSeconds]);
 
   const openPause = () => {
     game.pauseClock();
@@ -319,16 +349,6 @@ export const App = () => {
     setPaused(false);
     playMusic();
     game.resumeClock();
-  };
-
-  const newGameFromPause = () => {
-    setPaused(false);
-    cancelSwap();
-    setPendingBlank(null);
-    playMusic();
-    game.startNewRun({
-      durationSeconds: state?.durationSeconds === 600 ? 600 : 300,
-    });
   };
 
   // ---------- swap ----------
@@ -425,12 +445,17 @@ export const App = () => {
   };
 
   const handlePlayAgain = () => {
-    cancelSwap();
-    setPendingBlank(null);
+    resetGameUi();
     playMusic();
-    game.startNewRun({
+    void game.startNewRun({
       durationSeconds: state?.durationSeconds === 600 ? 600 : 300,
     });
+  };
+
+  const handleGameOverMainMenu = () => {
+    resetGameUi();
+    pauseMusic();
+    game.goToMainMenu();
   };
 
   const resumeSavedRun = () => {
@@ -442,6 +467,8 @@ export const App = () => {
     setMusicEnabled(enabled);
     if (!enabled) {
       pauseMusic();
+    } else if (paused) {
+      void playMusic();
     }
   };
 
@@ -611,7 +638,7 @@ export const App = () => {
                 onClick={resumeSavedRun}
                 disabled={!profile}
               >
-                Resume Run
+                {resumeRunLabel(savedRunDurationSeconds ?? 300)}
               </button>
               <button className="btn btn--danger" onClick={game.discardSavedRun}>
                 Discard Saved Run
@@ -622,22 +649,22 @@ export const App = () => {
               <button
                 className="btn btn--primary"
                 onClick={() => requestStart(300)}
-                disabled={!dictionaryReady || !profile || editingName || starting}
+                disabled={!dictionaryReady || !profile || editingName || startingRun}
               >
                 {!dictionaryReady
                   ? "Loading words…"
-                  : starting
+                  : startingDuration === 300
                   ? "Starting…"
                     : "5-Minute Mini Rush"}
               </button>
               <button
                 className="btn btn--primary"
                 onClick={() => requestStart(600)}
-                disabled={!dictionaryReady || !profile || editingName || starting}
+                disabled={!dictionaryReady || !profile || editingName || startingRun}
               >
                 {!dictionaryReady
                   ? "Loading words…"
-                  : starting
+                  : startingDuration === 600
                     ? "Starting…"
                     : "10-Minute Classic Rush"}
               </button>
@@ -850,7 +877,9 @@ export const App = () => {
       {paused && isActive ? (
         <PauseMenu
           onResume={closePause}
-          onNewGame={newGameFromPause}
+          onNewGame={handleNewGameFromPause}
+          durationSeconds={state.durationSeconds}
+          onMainMenu={handleMainMenu}
           onShowLeaderboard={isBackendConfigured() ? openLeaderboard : null}
           musicEnabled={musicEnabled}
           musicVolume={musicVolume}
@@ -859,7 +888,7 @@ export const App = () => {
         />
       ) : null}
 
-      {state.status === "expired" && state.finalBreakdown ? (
+      {state.status === "expired" && state.finalBreakdown && !startingRun ? (
         <GameOverPanel
           breakdown={state.finalBreakdown}
           wordCount={state.wordCount}
@@ -872,6 +901,7 @@ export const App = () => {
           syncDetail={game.submitError}
           onShowLeaderboard={isBackendConfigured() ? openLeaderboard : null}
           onPlayAgain={handlePlayAgain}
+          onMainMenu={handleGameOverMainMenu}
         />
       ) : null}
 

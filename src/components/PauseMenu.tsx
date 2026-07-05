@@ -1,6 +1,11 @@
+import { newGameLabel } from "../game/rush/modeLabels";
+
 interface PauseMenuProps {
   onResume: () => void;
   onNewGame: () => void;
+  /** 300 for mini rush, 600 for classic. */
+  durationSeconds: number;
+  onMainMenu: () => void;
   onShowLeaderboard: (() => void) | null;
   musicEnabled: boolean;
   musicVolume: number;
@@ -12,6 +17,8 @@ interface PauseMenuProps {
 export const PauseMenu = ({
   onResume,
   onNewGame,
+  durationSeconds,
+  onMainMenu,
   onShowLeaderboard,
   musicEnabled,
   musicVolume,
@@ -26,25 +33,32 @@ export const PauseMenu = ({
         <div className="pause__music-header">
           <span>Music</span>
           <button
-            className="pause__music-toggle"
+            className={`pause__music-toggle${
+              musicEnabled ? " pause__music-toggle--on" : ""
+            }`}
             type="button"
-            aria-pressed={!musicEnabled}
+            aria-pressed={musicEnabled}
             onClick={() => onMusicEnabledChange(!musicEnabled)}
           >
-            {musicEnabled ? "Off" : "On"}
+            {musicEnabled ? "On" : "Off"}
           </button>
         </div>
-        <label className="pause__volume">
+        <label
+          className={`pause__volume${musicEnabled ? "" : " pause__volume--off"}`}
+        >
           <span>Volume</span>
           <input
             type="range"
             min="0"
             max="100"
             value={Math.round(musicVolume * 100)}
-            disabled={!musicEnabled}
-            onChange={(e) =>
-              onMusicVolumeChange(Number(e.currentTarget.value) / 100)
-            }
+            readOnly={!musicEnabled}
+            tabIndex={musicEnabled ? 0 : -1}
+            aria-disabled={!musicEnabled}
+            onChange={(e) => {
+              if (!musicEnabled) return;
+              onMusicVolumeChange(Number(e.currentTarget.value) / 100);
+            }}
           />
           <strong>{Math.round(musicVolume * 100)}%</strong>
         </label>
@@ -59,7 +73,10 @@ export const PauseMenu = ({
           </button>
         ) : null}
         <button className="btn btn--danger" onClick={onNewGame}>
-          New Game
+          {newGameLabel(durationSeconds)}
+        </button>
+        <button className="btn" onClick={onMainMenu}>
+          Main Menu
         </button>
       </div>
     </div>

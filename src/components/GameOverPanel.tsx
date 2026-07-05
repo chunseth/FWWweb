@@ -19,6 +19,7 @@ interface GameOverPanelProps {
   /** Navigate to the leaderboard page; null hides the button. */
   onShowLeaderboard: (() => void) | null;
   onPlayAgain: () => void;
+  onMainMenu: () => void;
 }
 
 /** Subtle, non-blocking leaderboard sync status. */
@@ -230,6 +231,7 @@ export const GameOverPanel = ({
   syncDetail = null,
   onShowLeaderboard,
   onPlayAgain,
+  onMainMenu,
 }: GameOverPanelProps) => {
   const [shareImageUrl, setShareImageUrl] = useState<string | null>(null);
   const [shareStatus, setShareStatus] = useState<string | null>(null);
@@ -329,6 +331,9 @@ export const GameOverPanel = ({
           ) : null}
           <button className="btn btn--primary" onClick={onPlayAgain}>
             Play Again
+          </button>
+          <button className="btn" onClick={onMainMenu}>
+            Main Menu
           </button>
         </div>
         {shareStatus ? <p className="gameover__share-status">{shareStatus}</p> : null}

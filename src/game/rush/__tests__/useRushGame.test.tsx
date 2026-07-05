@@ -139,6 +139,51 @@ describe("useRushGame", () => {
     expect(result.current.remainingMs).toBeLessThan(RUSH_DURATION_MS);
   });
 
+  it("returns to the menu and keeps an active run in autosave", () => {
+    const { result } = renderGame();
+    act(() => {
+      result.current.startNewRun();
+    });
+    act(() => {
+      result.current.placeRackTile(0, 5, 5, "Z");
+    });
+
+    act(() => {
+      result.current.goToMainMenu();
+    });
+
+    expect(result.current.state).toBeNull();
+    expect(result.current.savedRunAvailable).toBe(true);
+    expect(result.current.remainingMs).toBe(RUSH_DURATION_MS);
+  });
+
+  it("resets rack and timer when starting a new run after expiry", () => {
+    const { result } = renderGame();
+    act(() => {
+      result.current.startNewRun();
+    });
+    act(() => {
+      result.current.placeRackTile(0, 5, 5, "Z");
+      result.current.placeRackTile(1, 5, 6, "Z");
+      result.current.submitWord();
+    });
+
+    const expiredRack = result.current.state?.rack.map((tile) => tile.letter);
+
+    act(() => {
+      void result.current.startNewRun();
+    });
+
+    expect(result.current.state?.status).toBe("active");
+    expect(result.current.remainingMs).toBe(RUSH_DURATION_MS);
+    expect(result.current.state?.rack.map((tile) => tile.letter)).not.toEqual(
+      expiredRack
+    );
+    expect(result.current.state?.board.flat().every((cell) => cell === null)).toBe(
+      true
+    );
+  });
+
   it("pauses and resumes the clock", () => {
     const { result } = renderGame();
     act(() => {

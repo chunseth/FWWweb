@@ -154,6 +154,7 @@ describe("submitTurn", () => {
     expect(entry.type).toBe("submit");
     if (entry.type === "submit") {
       expect(entry.placements).toHaveLength(2);
+      expect(entry.placements.every((p) => p.id !== undefined)).toBe(true);
       expect(entry.turnScore).toBe(result.detail.turnScore);
     }
     expect(next.wordPointsTotal).toBeGreaterThan(0);

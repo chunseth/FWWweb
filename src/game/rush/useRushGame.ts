@@ -10,8 +10,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   clearAutosave,
+  extractDraftPlacements,
   loadAutosave,
   saveAutosave,
+  toStableSnapshot,
 } from "./autosave";
 import { saveLocalResult } from "./localResults";
 import {
@@ -20,11 +22,15 @@ import {
   finishRun,
   getRunningScore,
   getRushDurationMs,
+  getRushRunConfig,
   getUsedRackIndices,
   moveBoardTile as engineMoveBoardTile,
   placeTile as enginePlaceTile,
+  reconcileSnapshotFromJournal,
   removeBoardTile as engineRemoveBoardTile,
   reorderRack as engineReorderRack,
+  replayJournal,
+  resolveRackIndex,
   returnAllDraftTiles,
   shuffleRack as engineShuffleRack,
   submitTurn as engineSubmitTurn,
@@ -91,8 +97,10 @@ export interface UseRushGameResult {
   dictionaryReady: boolean;
   /** A resumable saved run exists (and no run is currently mounted). */
   savedRunAvailable: boolean;
-  /** True while a server run is being created (Start button spinner). */
-  starting: boolean;
+  /** Duration of the autosaved run, when `savedRunAvailable` is true. */
+  savedRunDurationSeconds: 300 | 600 | null;
+  /** Duration being started from the menu; null when idle. */
+  startingDuration: 300 | 600 | null;
   /** Leaderboard submission state for the finished run. */
   syncState: RushSyncState;
   /** Global rank of the player's personal best, once the server confirms it. */
@@ -100,6 +108,8 @@ export interface UseRushGameResult {
   /** Server rejection reason (e.g. "replay_rejected"), for the sync line. */
   submitError: string | null;
   startNewRun: (config?: Partial<RushRunConfig>) => Promise<void>;
+  /** Leave the current screen for the mode menu (autosaves active runs). */
+  goToMainMenu: () => void;
   resumeSavedRun: () => boolean;
   discardSavedRun: () => void;
   placeRackTile: (
@@ -145,7 +155,12 @@ export const useRushGame = (
     dictionary.loaded ?? true
   );
   const [savedRunAvailable, setSavedRunAvailable] = useState(false);
-  const [starting, setStarting] = useState(false);
+  const [savedRunDurationSeconds, setSavedRunDurationSeconds] = useState<
+    300 | 600 | null
+  >(null);
+  const [startingDuration, setStartingDuration] = useState<300 | 600 | null>(
+    null
+  );
   const [syncState, setSyncState] = useState<RushSyncState>("idle");
   const [submittedRank, setSubmittedRank] = useState<number | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -225,11 +240,23 @@ export const useRushGame = (
     };
   }, []);
 
+  const readSavedRunAvailability = useCallback(() => {
+    const restored = loadAutosave();
+    const available = restored != null && restored.state.status === "active";
+    setSavedRunAvailable(available);
+    setSavedRunDurationSeconds(
+      available
+        ? restored!.state.durationSeconds === 600
+          ? 600
+          : 300
+        : null
+    );
+  }, []);
+
   // Detect a resumable autosave on mount.
   useEffect(() => {
-    const restored = loadAutosave();
-    setSavedRunAvailable(restored != null && restored.state.status === "active");
-  }, []);
+    readSavedRunAvailability();
+  }, [readSavedRunAvailability]);
 
   const persist = useCallback((snapshot: RushSnapshot, elapsedMs: number) => {
     saveAutosave({ ...snapshot, elapsedMs });
@@ -261,6 +288,21 @@ export const useRushGame = (
       return;
     }
 
+    if (dictionary.loaded !== false) {
+      const preflight = replayJournal(
+        finished.seed,
+        finished.journal,
+        dictionary,
+        finished.startedAtWallMs,
+        { durationSeconds: finished.durationSeconds }
+      );
+      if (!preflight.ok) {
+        setSubmitError(preflight.error ?? "replay_preflight_failed");
+        setSyncState("rejected");
+        return;
+      }
+    }
+
     const displayName = loadProfile()?.username;
     setSyncState("submitting");
     void submitRushRunToServer(finished.runId, finished.journal, displayName)
@@ -284,7 +326,32 @@ export const useRushGame = (
         }
       })
       .catch(() => setSyncState("queued"));
-  }, []);
+  }, [dictionary]);
+
+  const applyDraftPlacements = useCallback(
+    (base: RushSnapshot, placements: ReturnType<typeof extractDraftPlacements>) => {
+      let next = base;
+      for (const placement of placements) {
+        const rackIndex = resolveRackIndex(
+          next,
+          placement,
+          getUsedRackIndices(next)
+        );
+        if (rackIndex < 0) return null;
+        const placed = enginePlaceTile(
+          next,
+          rackIndex,
+          placement.row,
+          placement.col,
+          placement.blankLetter ?? null
+        );
+        if (!placed.ok) return null;
+        next = placed.state;
+      }
+      return next;
+    },
+    []
+  );
 
   const finishAndRecord = useCallback(
     (finished: RushSnapshot) => {
@@ -372,9 +439,43 @@ export const useRushGame = (
     setSubmitError(null);
     setRemainingMs(getRushDurationMs(run));
     setSavedRunAvailable(false);
+    setSavedRunDurationSeconds(null);
     setState(run);
     saveAutosave(run);
   }, []);
+
+  const resetClockForDuration = useCallback((durationSeconds: 300 | 600) => {
+    baseElapsedRef.current = 0;
+    runningSinceRef.current = null;
+    setRemainingMs(durationSeconds * 1000);
+  }, []);
+
+  const goToMainMenu = useCallback(() => {
+    if (draftSaveTimerRef.current != null) {
+      window.clearTimeout(draftSaveTimerRef.current);
+      draftSaveTimerRef.current = null;
+    }
+
+    const current = stateRef.current;
+    if (current?.status === "active") {
+      saveAutosave({ ...current, elapsedMs: getElapsedMs() });
+      setSavedRunAvailable(true);
+      setSavedRunDurationSeconds(current.durationSeconds === 600 ? 600 : 300);
+    } else {
+      setSavedRunAvailable(false);
+      setSavedRunDurationSeconds(null);
+    }
+
+    baseElapsedRef.current = 0;
+    runningSinceRef.current = null;
+    setMessage(null);
+    setSyncState("idle");
+    setSubmittedRank(null);
+    setSubmitError(null);
+    setStartingDuration(null);
+    setRemainingMs(300_000);
+    setState(null);
+  }, [getElapsedMs]);
 
   /**
    * Start a run. When the backend is configured, ask the server for a seed
@@ -385,37 +486,56 @@ export const useRushGame = (
   const startNewRun = useCallback(async (
     config?: Partial<RushRunConfig>
   ): Promise<void> => {
-    const startLocal = () => {
-      const seed = `${Date.now().toString(36)}-${Math.floor(
-        Math.random() * 1_000_000
-      ).toString(36)}`;
-      mountRun(createRushRun(seed, Date.now(), config));
+    const runConfig = getRushRunConfig(config);
+    resetClockForDuration(runConfig.durationSeconds);
+    setMessage(null);
+    setSyncState("idle");
+    setSubmittedRank(null);
+    setSubmitError(null);
+    resultSavedRef.current = false;
+    setStartingDuration(runConfig.durationSeconds);
+
+    const mountFreshRun = (
+      seed: string,
+      startedAtWallMs: number,
+      extras: Partial<RushSnapshot> = {}
+    ) => {
+      const run = createRushRun(seed, startedAtWallMs, runConfig);
+      Object.assign(run, extras);
+      mountRun(run);
     };
 
     if (!isBackendConfigured()) {
-      startLocal();
+      mountFreshRun(
+        `${Date.now().toString(36)}-${Math.floor(
+          Math.random() * 1_000_000
+        ).toString(36)}`,
+        Date.now()
+      );
+      setStartingDuration(null);
       return;
     }
 
-    setStarting(true);
+    // Mount immediately so rack, board, and timer reset while the server run loads.
+    mountFreshRun(`local-${Date.now().toString(36)}`, Date.now(), {
+      eligibility: "local_only",
+      runId: null,
+    });
+
     try {
       const server = await createRushRunOnServer(config);
       if (server) {
-        const run = createRushRun(server.seed, server.startedAtMs, {
-          durationSeconds: server.durationSeconds === 600 ? 600 : 300,
+        mountFreshRun(server.seed, server.startedAtMs, {
+          runId: server.runId,
+          eligibility: "eligible",
         });
-        run.runId = server.runId;
-        run.eligibility = "eligible";
-        mountRun(run);
-      } else {
-        startLocal();
       }
     } catch {
-      startLocal();
+      /* keep the optimistic local run */
     } finally {
-      setStarting(false);
+      setStartingDuration(null);
     }
-  }, [mountRun]);
+  }, [mountRun, resetClockForDuration]);
 
   const resumeSavedRun = useCallback((): boolean => {
     const restored = loadAutosave();
@@ -423,7 +543,26 @@ export const useRushGame = (
       setSavedRunAvailable(false);
       return false;
     }
-    const resumed = restored.state;
+
+    const drafts = extractDraftPlacements(restored.state);
+    let resumed = restored.state;
+    if (dictionary.loaded !== false && resumed.journal.length > 0) {
+      const reconciled = reconcileSnapshotFromJournal(
+        toStableSnapshot(resumed),
+        dictionary
+      );
+      if (!reconciled) {
+        setSavedRunAvailable(false);
+        return false;
+      }
+      const withDrafts = applyDraftPlacements(reconciled, drafts);
+      if (!withDrafts) {
+        setSavedRunAvailable(false);
+        return false;
+      }
+      resumed = withDrafts;
+    }
+
     resultSavedRef.current = false;
     setMessage(null);
     setSavedRunAvailable(false);
@@ -442,11 +581,12 @@ export const useRushGame = (
     setRemainingMs(Math.max(0, durationMs - resumed.elapsedMs));
     setState(resumed);
     return true;
-  }, [finishAndRecord]);
+  }, [finishAndRecord, dictionary, applyDraftPlacements]);
 
   const discardSavedRun = useCallback(() => {
     clearAutosave();
     setSavedRunAvailable(false);
+    setSavedRunDurationSeconds(null);
   }, []);
 
   const requireActive = useCallback((): RushSnapshot | null => {
@@ -639,11 +779,13 @@ export const useRushGame = (
     message,
     dictionaryReady,
     savedRunAvailable,
-    starting,
+    savedRunDurationSeconds,
+    startingDuration,
     syncState,
     submittedRank,
     submitError,
     startNewRun,
+    goToMainMenu,
     resumeSavedRun,
     discardSavedRun,
     placeRackTile,
