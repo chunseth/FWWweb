@@ -1,4 +1,10 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+// Hermetic: ignore any developer .env so no real network is attempted.
+vi.mock("../supabaseClient", () => ({
+  isBackendConfigured: () => false,
+  getSupabaseClient: () => null,
+}));
 import {
   checkUsername,
   clearProfile,

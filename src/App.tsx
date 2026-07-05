@@ -15,6 +15,8 @@ import type { DragSource } from "./game/rush/useTileDrag";
 import { getBestLocalResult } from "./game/rush/localResults";
 import { loadProfile } from "./services/usernameService";
 import type { StoredProfile } from "./services/usernameService";
+import { LeaderboardPage } from "./components/LeaderboardPage";
+import { isBackendConfigured } from "./services/supabaseClient";
 import { BLANK_LETTER } from "./game/shared/bag";
 import { MINI_BOARD_SIZE } from "./game/shared/premiumSquares";
 import { getPlacedCells, validateSubmitTurn } from "./game/shared/validation";
@@ -25,6 +27,8 @@ const TOAST_MS = 2400;
 const COMBO_EXPLAINED_KEY = "fwwweb.comboExplained.v1";
 const SWAP_TILE_STAGGER_MS = 380;
 const SWAP_COMMIT_EXTRA_MS = 450;
+const MUSIC_URL = "/friendswwords.mp3";
+const DEFAULT_MUSIC_VOLUME = 0.55;
 
 const isJsdom = () =>
   typeof navigator !== "undefined" &&
@@ -62,6 +66,8 @@ export const App = () => {
     message,
     dictionaryReady,
     savedRunAvailable,
+    starting,
+    syncState,
   } = game;
 
   const [profile, setProfile] = useState<StoredProfile | null>(() =>
@@ -70,6 +76,8 @@ export const App = () => {
   const [editingName, setEditingName] = useState(false);
   const [showComboModal, setShowComboModal] = useState(false);
   const [paused, setPaused] = useState(false);
+  const [musicEnabled, setMusicEnabled] = useState(true);
+  const [musicVolume, setMusicVolume] = useState(DEFAULT_MUSIC_VOLUME);
   const [swapMode, setSwapMode] = useState(false);
   const [swapSelection, setSwapSelection] = useState<Set<number>>(new Set());
   const [swapFloats, setSwapFloats] = useState<SwapFloat[]>([]);
@@ -77,8 +85,53 @@ export const App = () => {
   const swapAnimatingRef = useRef(false);
   const swapTimeoutsRef = useRef<number[]>([]);
   const [pendingBlank, setPendingBlank] = useState<PendingBlank | null>(null);
+  // Hash-routed leaderboard page (#/leaderboard) so the browser back button
+  // returns to the game/menu naturally.
+  const [showLeaderboard, setShowLeaderboard] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      window.location.hash === "#/leaderboard"
+  );
+
+  useEffect(() => {
+    const onHashChange = () => {
+      setShowLeaderboard(window.location.hash === "#/leaderboard");
+    };
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
+  const openLeaderboard = useCallback(() => {
+    window.location.hash = "#/leaderboard";
+  }, []);
+
+  const closeLeaderboard = useCallback(() => {
+    if (window.location.hash === "#/leaderboard") {
+      window.history.back();
+    } else {
+      setShowLeaderboard(false);
+    }
+  }, []);
+
+  // Freeze the run clock while the leaderboard page covers an active game;
+  // resume on return unless the player had paused deliberately.
+  useEffect(() => {
+    if (!state || state.status !== "active") return;
+    if (showLeaderboard) {
+      game.pauseClock();
+    } else if (!paused) {
+      game.resumeClock();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showLeaderboard]);
 
   const musicRef = useRef<HTMLAudioElement>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const musicBufferRef = useRef<AudioBuffer | null>(null);
+  const musicGainRef = useRef<GainNode | null>(null);
+  const musicSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const musicLoadingRef = useRef<Promise<AudioBuffer | null> | null>(null);
+  const musicShouldPlayRef = useRef(false);
   const boardWrapRef = useRef<HTMLDivElement>(null);
 
   // ResizeObserver keeps --cell-size (px) in sync with the board width so
@@ -124,6 +177,25 @@ export const App = () => {
       pauseMusic();
     }
   }, [state?.status]);
+
+  useEffect(() => {
+    if (musicRef.current) {
+      musicRef.current.volume = musicVolume;
+    }
+    if (musicGainRef.current) {
+      musicGainRef.current.gain.value = musicVolume;
+    }
+  }, [musicVolume]);
+
+  useEffect(
+    () => () => {
+      pauseMusic();
+      audioContextRef.current?.close().catch(() => {
+        /* ignore */
+      });
+    },
+    []
+  );
 
   const canDropOnCell = useCallback(
     (row: number, col: number): boolean =>
@@ -224,6 +296,13 @@ export const App = () => {
     () => getBestLocalResult(),
     // Recompute whenever a run ends.
     [state?.status]
+  );
+  const playUrl = useMemo(
+    () =>
+      typeof window === "undefined"
+        ? "https://friendswithwords.app"
+        : window.location.origin,
+    []
   );
 
   // ---------- pause ----------
@@ -352,24 +431,112 @@ export const App = () => {
     game.resumeSavedRun();
   };
 
-  const playMusic = () => {
-    const music = musicRef.current;
-    if (!music || isJsdom()) return;
-
-    music.volume = 0.55;
-    try {
-      const result = music.play();
-      if (result && "catch" in result) {
-        result.catch(() => {
-          /* Browser may block audio until a direct user gesture. */
-        });
-      }
-    } catch {
-      /* jsdom and some browsers can reject media playback synchronously. */
+  const handleMusicEnabledChange = (enabled: boolean) => {
+    setMusicEnabled(enabled);
+    if (!enabled) {
+      pauseMusic();
     }
   };
 
+  const handleMusicVolumeChange = (volume: number) => {
+    const nextVolume = Math.max(0, Math.min(1, volume));
+    setMusicVolume(nextVolume);
+  };
+
+  const loadMusicBuffer = async (
+    context: AudioContext
+  ): Promise<AudioBuffer | null> => {
+    if (musicBufferRef.current) return musicBufferRef.current;
+    if (!musicLoadingRef.current) {
+      musicLoadingRef.current = fetch(MUSIC_URL)
+        .then((response) => response.arrayBuffer())
+        .then((data) => context.decodeAudioData(data))
+        .then((buffer) => {
+          musicBufferRef.current = buffer;
+          return buffer;
+        })
+        .catch(() => null);
+    }
+    return musicLoadingRef.current;
+  };
+
+  const playWebAudioMusic = async (): Promise<boolean> => {
+    if (
+      isJsdom() ||
+      typeof AudioContext === "undefined" ||
+      typeof fetch === "undefined"
+    ) {
+      return false;
+    }
+
+    try {
+      const context =
+        audioContextRef.current ?? new AudioContext({ latencyHint: "playback" });
+      audioContextRef.current = context;
+      if (context.state === "suspended") {
+        await context.resume();
+      }
+
+      const buffer = await loadMusicBuffer(context);
+      if (!buffer || !musicShouldPlayRef.current || !musicEnabled) return false;
+
+      if (!musicGainRef.current) {
+        const gain = context.createGain();
+        gain.connect(context.destination);
+        musicGainRef.current = gain;
+      }
+      musicGainRef.current.gain.value = musicVolume;
+
+      if (!musicSourceRef.current) {
+        const source = context.createBufferSource();
+        source.buffer = buffer;
+        source.loop = true;
+        source.connect(musicGainRef.current);
+        source.start();
+        musicSourceRef.current = source;
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const playMusic = () => {
+    if (!musicEnabled) return;
+    const music = musicRef.current;
+    if (!music || isJsdom()) return;
+
+    musicShouldPlayRef.current = true;
+    playWebAudioMusic().then((usingWebAudio) => {
+      if (usingWebAudio || !musicShouldPlayRef.current || !musicEnabled) return;
+
+      music.loop = true;
+      music.volume = musicVolume;
+      try {
+        const result = music.play();
+        if (result && "catch" in result) {
+          result.catch(() => {
+            /* Browser may block audio until a direct user gesture. */
+          });
+        }
+      } catch {
+        /* jsdom and some browsers can reject media playback synchronously. */
+      }
+    });
+  };
+
   const pauseMusic = () => {
+    musicShouldPlayRef.current = false;
+    if (musicSourceRef.current) {
+      try {
+        musicSourceRef.current.stop();
+        musicSourceRef.current.disconnect();
+      } catch {
+        /* source may already be stopped */
+      }
+      musicSourceRef.current = null;
+    }
+
     if (isJsdom()) return;
 
     try {
@@ -379,12 +546,18 @@ export const App = () => {
     }
   };
 
+  // ---------- leaderboard page ----------
+
+  if (showLeaderboard) {
+    return <LeaderboardPage onBack={closeLeaderboard} />;
+  }
+
   // ---------- menu screens ----------
 
   if (!state) {
     return (
       <>
-        <audio ref={musicRef} src="/friendswwords.mp3" loop preload="auto" />
+        <audio ref={musicRef} src={MUSIC_URL} loop preload="auto" />
         <div className="screen screen--menu">
           <div className="menu__brand">
             <img
@@ -439,11 +612,21 @@ export const App = () => {
             <button
               className="btn btn--primary"
               onClick={requestStart}
-              disabled={!dictionaryReady || !profile || editingName}
+              disabled={!dictionaryReady || !profile || editingName || starting}
             >
-              {dictionaryReady ? "Start Rush" : "Loading words…"}
+              {!dictionaryReady
+                ? "Loading words…"
+                : starting
+                  ? "Starting…"
+                  : "Start Rush"}
             </button>
           )}
+
+          {isBackendConfigured() ? (
+            <button className="btn btn--ghost" onClick={openLeaderboard}>
+              Leaderboard
+            </button>
+          ) : null}
 
           {showComboModal ? (
             <ComboExplainerModal onStart={startFromComboModal} />
@@ -461,7 +644,7 @@ export const App = () => {
 
   return (
     <>
-      <audio ref={musicRef} src="/friendswwords.mp3" loop preload="auto" />
+      <audio ref={musicRef} src={MUSIC_URL} loop preload="auto" />
       <div className="screen">
         <GameHud
           remainingMs={remainingMs}
@@ -643,7 +826,15 @@ export const App = () => {
       ) : null}
 
       {paused && isActive ? (
-        <PauseMenu onResume={closePause} onNewGame={newGameFromPause} />
+        <PauseMenu
+          onResume={closePause}
+          onNewGame={newGameFromPause}
+          onShowLeaderboard={isBackendConfigured() ? openLeaderboard : null}
+          musicEnabled={musicEnabled}
+          musicVolume={musicVolume}
+          onMusicEnabledChange={handleMusicEnabledChange}
+          onMusicVolumeChange={handleMusicVolumeChange}
+        />
       ) : null}
 
       {state.status === "expired" && state.finalBreakdown ? (
@@ -651,6 +842,12 @@ export const App = () => {
           breakdown={state.finalBreakdown}
           wordCount={state.wordCount}
           best={best}
+          syncState={syncState}
+          board={state.board}
+          premiumSquares={state.premiumSquares}
+          playUrl={playUrl}
+          rank={game.submittedRank}
+          onShowLeaderboard={isBackendConfigured() ? openLeaderboard : null}
           onPlayAgain={handlePlayAgain}
         />
       ) : null}

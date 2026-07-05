@@ -1,5 +1,11 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+// Hermetic: ignore any developer .env so no real network is attempted.
+vi.mock("../services/supabaseClient", () => ({
+  isBackendConfigured: () => false,
+  getSupabaseClient: () => null,
+}));
 import { App } from "../App";
 import { PROFILE_KEY } from "../services/usernameService";
 
@@ -93,6 +99,23 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /resume/i }));
     expect(screen.queryByText(/paused/i)).toBeNull();
+  });
+
+  it("renders the leaderboard page from the #/leaderboard hash and navigates back", async () => {
+    seedProfile();
+    window.location.hash = "#/leaderboard";
+    render(<App />);
+    expect(screen.getByText(/5-Minute Rush/)).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: /leaderboard/i })
+    ).toBeTruthy();
+    // Unconfigured backend: page still renders with a friendly note.
+    expect(await screen.findByText(/unavailable/i)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /back/i }));
+    window.location.hash = "";
+    fireEvent(window, new Event("hashchange"));
+    expect(await screen.findByRole("button", { name: /start rush/i })).toBeTruthy();
   });
 
   it("offers to resume when an autosave exists", async () => {

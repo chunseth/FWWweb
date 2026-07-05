@@ -2583,7 +2583,7 @@ const VALID_IRREGULAR_ADJECTIVE_FORMS = new Set([
   "elder",
 ]);
 
-class Dictionary {
+export class Dictionary {
   words: Set<string>;
   loaded: boolean;
 
@@ -2592,7 +2592,10 @@ class Dictionary {
     this.loaded = false;
   }
 
-  async load(onProgress?: (progress: number) => void): Promise<void> {
+  async load(
+    onProgress?: (progress: number) => void,
+    wordsOverride?: readonly string[] | null
+  ): Promise<void> {
     const reportProgress =
       typeof onProgress === "function" ? onProgress : () => {};
 
@@ -2603,7 +2606,7 @@ class Dictionary {
 
     reportProgress(0);
 
-    const dictionaryWords = await loadDictionaryWords();
+    const dictionaryWords = wordsOverride ?? (await loadDictionaryWords());
 
     for (let index = 0; index < dictionaryWords.length; index += 1) {
       const word = dictionaryWords[index];

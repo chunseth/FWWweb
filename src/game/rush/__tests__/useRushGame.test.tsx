@@ -1,5 +1,12 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// Tests must be hermetic: never talk to a real Supabase project even when a
+// developer .env is present. The hook then takes the synchronous local path.
+vi.mock("../../../services/supabaseClient", () => ({
+  isBackendConfigured: () => false,
+  getSupabaseClient: () => null,
+}));
 import { AUTOSAVE_KEY, loadAutosave } from "../autosave";
 import { LOCAL_RESULTS_KEY } from "../localResults";
 import { RUSH_DURATION_MS } from "../rushEngine";

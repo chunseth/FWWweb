@@ -31,6 +31,16 @@ import {
   RUSH_DURATION_MS,
 } from "./rushEngine";
 import type { SubmitDetail } from "./rushEngine";
+import {
+  createRushRunOnServer,
+  submitRushRunToServer,
+} from "../../services/rushRunService";
+import {
+  enqueueSubmission,
+  processPendingSubmissions,
+} from "../../services/pendingSubmissions";
+import { isBackendConfigured } from "../../services/supabaseClient";
+import { loadProfile } from "../../services/usernameService";
 import { dictionary as defaultDictionary } from "../../utils/dictionary";
 import type {
   DictionaryLike,
@@ -50,6 +60,20 @@ const DRAFT_SAVE_DEBOUNCE_MS = 250;
 const CLOCK_SAVE_INTERVAL_MS = 5000;
 const TICK_MS = 200;
 
+/**
+ * Where a finished run's score stands with the public leaderboard.
+ * - local_only: run never had a server id (offline/unconfigured start)
+ * - submitting/submitted/rejected: live submission flow
+ * - queued: ended offline; will retry within the grace window
+ */
+export type RushSyncState =
+  | "idle"
+  | "local_only"
+  | "submitting"
+  | "submitted"
+  | "queued"
+  | "rejected";
+
 export interface GameMessage extends ValidationError {
   kind: "error" | "success";
   turnPoints?: number;
@@ -67,7 +91,13 @@ export interface UseRushGameResult {
   dictionaryReady: boolean;
   /** A resumable saved run exists (and no run is currently mounted). */
   savedRunAvailable: boolean;
-  startNewRun: () => void;
+  /** True while a server run is being created (Start button spinner). */
+  starting: boolean;
+  /** Leaderboard submission state for the finished run. */
+  syncState: RushSyncState;
+  /** Global rank of the player's personal best, once the server confirms it. */
+  submittedRank: number | null;
+  startNewRun: () => Promise<void>;
   resumeSavedRun: () => boolean;
   discardSavedRun: () => void;
   placeRackTile: (
@@ -113,6 +143,9 @@ export const useRushGame = (
     dictionary.loaded ?? true
   );
   const [savedRunAvailable, setSavedRunAvailable] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [syncState, setSyncState] = useState<RushSyncState>("idle");
+  const [submittedRank, setSubmittedRank] = useState<number | null>(null);
 
   const stateRef = useRef<RushSnapshot | null>(null);
   stateRef.current = state;
@@ -207,6 +240,43 @@ export const useRushGame = (
     }, DRAFT_SAVE_DEBOUNCE_MS);
   }, [getElapsedMs, persist]);
 
+  /** Push a finished eligible run through the hardened server path. */
+  const submitFinishedRun = useCallback((finished: RushSnapshot) => {
+    if (!finished.runId || finished.eligibility === "local_only") {
+      setSyncState("local_only");
+      return;
+    }
+    // Server-enforced deadline mirror: started_at + 300s + 60s grace.
+    const deadlineAtMs = finished.startedAtWallMs + RUSH_DURATION_MS + 60_000;
+    if (Date.now() > deadlineAtMs) {
+      setSyncState("local_only");
+      return;
+    }
+
+    const displayName = loadProfile()?.username;
+    setSyncState("submitting");
+    void submitRushRunToServer(finished.runId, finished.journal, displayName)
+      .then((outcome) => {
+        if (outcome.status === "accepted") {
+          setSubmittedRank(outcome.rank);
+          setSyncState("submitted");
+        } else if (outcome.status === "rejected") {
+          setSyncState("rejected");
+        } else {
+          enqueueSubmission({
+            runId: finished.runId!,
+            seed: finished.seed,
+            journal: finished.journal,
+            displayName,
+            deadlineAtMs,
+            queuedAtMs: Date.now(),
+          });
+          setSyncState("queued");
+        }
+      })
+      .catch(() => setSyncState("queued"));
+  }, []);
+
   const finishAndRecord = useCallback(
     (finished: RushSnapshot) => {
       setState(finished);
@@ -224,10 +294,20 @@ export const useRushGame = (
           wordCount: finished.wordCount,
           turnCount: finished.turnCount,
         });
+        submitFinishedRun(finished);
       }
     },
-    []
+    [submitFinishedRun]
   );
+
+  // Flush any queued offline submissions on load and on reconnect.
+  useEffect(() => {
+    if (!isBackendConfigured()) return;
+    const flush = () => void processPendingSubmissions().catch(() => undefined);
+    flush();
+    window.addEventListener("online", flush);
+    return () => window.removeEventListener("online", flush);
+  }, []);
 
   // Countdown tick + expiry.
   useEffect(() => {
@@ -273,20 +353,55 @@ export const useRushGame = (
     };
   }, [state, getElapsedMs, persist]);
 
-  const startNewRun = useCallback(() => {
-    const seed = `${Date.now().toString(36)}-${Math.floor(
-      Math.random() * 1_000_000
-    ).toString(36)}`;
-    const run = createRushRun(seed, Date.now());
+  const mountRun = useCallback((run: RushSnapshot) => {
     resultSavedRef.current = false;
     baseElapsedRef.current = 0;
     runningSinceRef.current = null;
     setMessage(null);
+    setSyncState("idle");
+    setSubmittedRank(null);
     setRemainingMs(RUSH_DURATION_MS);
     setSavedRunAvailable(false);
     setState(run);
     saveAutosave(run);
   }, []);
+
+  /**
+   * Start a run. When the backend is configured, ask the server for a seed
+   * and run id first (leaderboard eligibility requires starting online); on
+   * timeout/offline fall back to a local seed marked local_only. When no
+   * backend is configured, this resolves synchronously.
+   */
+  const startNewRun = useCallback(async (): Promise<void> => {
+    const startLocal = () => {
+      const seed = `${Date.now().toString(36)}-${Math.floor(
+        Math.random() * 1_000_000
+      ).toString(36)}`;
+      mountRun(createRushRun(seed, Date.now()));
+    };
+
+    if (!isBackendConfigured()) {
+      startLocal();
+      return;
+    }
+
+    setStarting(true);
+    try {
+      const server = await createRushRunOnServer();
+      if (server) {
+        const run = createRushRun(server.seed, server.startedAtMs);
+        run.runId = server.runId;
+        run.eligibility = "eligible";
+        mountRun(run);
+      } else {
+        startLocal();
+      }
+    } catch {
+      startLocal();
+    } finally {
+      setStarting(false);
+    }
+  }, [mountRun]);
 
   const resumeSavedRun = useCallback((): boolean => {
     const restored = loadAutosave();
@@ -509,6 +624,9 @@ export const useRushGame = (
     message,
     dictionaryReady,
     savedRunAvailable,
+    starting,
+    syncState,
+    submittedRank,
     startNewRun,
     resumeSavedRun,
     discardSavedRun,
