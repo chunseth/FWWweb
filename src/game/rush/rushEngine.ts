@@ -10,11 +10,14 @@
 import {
   BLANK_LETTER,
   createSeededRandom,
+  initializeTileBag,
   initializeMiniTileBag,
   shuffleArray,
 } from "../shared/bag";
 import {
+  BOARD_SIZE,
   createEmptyBoard,
+  createClassicPremiumSquares,
   createMiniPremiumSquares,
   MINI_BOARD_SIZE,
 } from "../shared/premiumSquares";
@@ -22,6 +25,7 @@ import {
   buildRushScoreBreakdown,
   CONSISTENCY_BONUS_STEP,
   CONSISTENCY_THRESHOLD,
+  TIME_BONUS_PROFILE_CLASSIC,
   TIME_BONUS_PROFILE_MINI,
 } from "../shared/scoring";
 import { validateSubmitTurn, getPlacedCells } from "../shared/validation";
@@ -30,6 +34,7 @@ import type {
   BagTile,
   DictionaryLike,
   JournalPlacement,
+  RushBoardMode,
   RushScoreBreakdown,
   RushSnapshot,
   Tile,
@@ -39,8 +44,40 @@ import type {
 export const RUSH_SCHEMA_VERSION = 1;
 export const RUSH_DURATION_SECONDS = 300;
 export const RUSH_DURATION_MS = RUSH_DURATION_SECONDS * 1000;
+export const CLASSIC_RUSH_DURATION_SECONDS = 600;
+export const CLASSIC_RUSH_DURATION_MS = CLASSIC_RUSH_DURATION_SECONDS * 1000;
 export const RUSH_SUBMIT_GRACE_MS = 60 * 1000;
 export const RACK_SIZE = 7;
+
+export interface RushRunConfig {
+  mode: RushBoardMode;
+  durationSeconds: 300 | 600;
+}
+
+export const MINI_RUSH_CONFIG: RushRunConfig = {
+  mode: "mini",
+  durationSeconds: 300,
+};
+
+export const CLASSIC_RUSH_CONFIG: RushRunConfig = {
+  mode: "classic",
+  durationSeconds: 600,
+};
+
+export const getRushRunConfig = (
+  config?: Partial<RushRunConfig> | null
+): RushRunConfig =>
+  config?.durationSeconds === CLASSIC_RUSH_DURATION_SECONDS ||
+  config?.mode === "classic"
+    ? CLASSIC_RUSH_CONFIG
+    : MINI_RUSH_CONFIG;
+
+export const getRushDurationMs = (stateOrConfig: {
+  durationSeconds: number;
+}): number => stateOrConfig.durationSeconds * 1000;
+
+export const getRushBonusMode = (state: { boardSize: number }): RushBoardMode =>
+  state.boardSize === BOARD_SIZE ? "classic" : "mini";
 
 export type EngineResult<T = undefined> =
   | ({ ok: true; state: RushSnapshot } & (T extends undefined
@@ -78,10 +115,17 @@ export const getUsedRackIndices = (state: RushSnapshot): Set<number> => {
 
 export const createRushRun = (
   seed: string,
-  startedAtWallMs: number = Date.now()
+  startedAtWallMs: number = Date.now(),
+  config?: Partial<RushRunConfig> | null
 ): RushSnapshot => {
+  const runConfig = getRushRunConfig(config);
   const random = createSeededRandom(seed);
-  const bag = shuffleArray(initializeMiniTileBag(seed), random.next);
+  const initialBag =
+    runConfig.mode === "classic"
+      ? initializeTileBag()
+      : initializeMiniTileBag(seed);
+  const bag = shuffleArray(initialBag, random.next);
+  const boardSize = runConfig.mode === "classic" ? BOARD_SIZE : MINI_BOARD_SIZE;
 
   const rack: Tile[] = [];
   let nextTileId = 0;
@@ -95,11 +139,14 @@ export const createRushRun = (
     schemaVersion: RUSH_SCHEMA_VERSION,
     seed,
     status: "active",
-    boardSize: MINI_BOARD_SIZE,
-    durationSeconds: RUSH_DURATION_SECONDS,
-    board: createEmptyBoard(MINI_BOARD_SIZE),
+    boardSize,
+    durationSeconds: runConfig.durationSeconds,
+    board: createEmptyBoard(boardSize),
     boardAtTurnStart: null,
-    premiumSquares: createMiniPremiumSquares(),
+    premiumSquares:
+      runConfig.mode === "classic"
+        ? createClassicPremiumSquares()
+        : createMiniPremiumSquares(),
     rack,
     bag,
     nextTileId,
@@ -363,7 +410,7 @@ export const submitTurn = (
     placedCells,
     words,
     newWords,
-    bonusMode: "mini",
+    bonusMode: getRushBonusMode(state),
   });
 
   let consistencyStreak = state.consistencyStreak;
@@ -542,7 +589,10 @@ export const buildCurrentBreakdown = (
     durationMs,
     wordHistory: state.wordHistory,
     comboBonusTotal: state.consistencyBonusTotal,
-    timeBonusProfile: TIME_BONUS_PROFILE_MINI,
+    timeBonusProfile:
+      getRushBonusMode(state) === "classic"
+        ? TIME_BONUS_PROFILE_CLASSIC
+        : TIME_BONUS_PROFILE_MINI,
   });
 
 /** Current running score shown in the HUD (before end-of-run breakdown). */
@@ -556,7 +606,7 @@ export const finishRun = (
 ): RushSnapshot => {
   if (state.status !== "active") return state;
   const cleared = returnAllDraftTiles(state);
-  const elapsedMs = Math.min(atElapsedMs, RUSH_DURATION_MS);
+  const elapsedMs = Math.min(atElapsedMs, getRushDurationMs(state));
   const breakdown = buildCurrentBreakdown(cleared, elapsedMs);
   return {
     ...cleared,
@@ -568,7 +618,7 @@ export const finishRun = (
 
 /** Timer hit 0:00. */
 export const expireRun = (state: RushSnapshot): RushSnapshot =>
-  finishRun(state, RUSH_DURATION_MS);
+  finishRun(state, getRushDurationMs(state));
 
 export interface ReplayResult {
   ok: boolean;
@@ -584,9 +634,10 @@ export const replayJournal = (
   seed: string,
   journal: RushSnapshot["journal"],
   dictionary: DictionaryLike,
-  startedAtWallMs?: number
+  startedAtWallMs?: number,
+  config?: Partial<RushRunConfig> | null
 ): ReplayResult => {
-  let state = createRushRun(seed, startedAtWallMs ?? Date.now());
+  let state = createRushRun(seed, startedAtWallMs ?? Date.now(), config);
 
   for (const entry of journal) {
     if (entry.type === "submit") {

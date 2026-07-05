@@ -20,10 +20,10 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { handleOptions, json } from "../_shared/http.ts";
 import {
   buildCurrentBreakdown,
+  CLASSIC_RUSH_DURATION_SECONDS,
   getServerDictionary,
   isPlausibleJournal,
   replayJournal,
-  RUSH_DURATION_MS,
   RUSH_DURATION_SECONDS,
 } from "../_shared/engine.mjs";
 
@@ -92,7 +92,10 @@ Deno.serve(async (req: Request) => {
     if (runError) return json({ error: "internal" }, 500);
     if (!run) return json({ error: "run_not_found" }, 404);
     if (run.player_id !== playerId) return json({ error: "forbidden" }, 403);
-    if (run.duration_seconds !== RUSH_DURATION_SECONDS) {
+    if (
+      run.duration_seconds !== RUSH_DURATION_SECONDS &&
+      run.duration_seconds !== CLASSIC_RUSH_DURATION_SECONDS
+    ) {
       return json({ error: "invalid_run" }, 422);
     }
     if (run.status === "submitted") {
@@ -112,7 +115,9 @@ Deno.serve(async (req: Request) => {
 
     // --- Authoritative replay ---------------------------------------------
     const dictionary = await getServerDictionary();
-    const replay = replayJournal(run.seed, journal, dictionary);
+    const replay = replayJournal(run.seed, journal, dictionary, undefined, {
+      durationSeconds: run.duration_seconds,
+    });
     if (!replay.ok || !replay.state) {
       await admin
         .from("web_rush_runs")
@@ -124,7 +129,10 @@ Deno.serve(async (req: Request) => {
 
     const finalState = replay.state;
     const lastEntry = (journal as Array<{ atElapsedMs: number }>).at(-1);
-    const elapsedMs = Math.min(lastEntry?.atElapsedMs ?? 0, RUSH_DURATION_MS);
+    const elapsedMs = Math.min(
+      lastEntry?.atElapsedMs ?? 0,
+      run.duration_seconds * 1000
+    );
     const breakdown = buildCurrentBreakdown(finalState, elapsedMs);
 
     // --- Display name: profiles first, sanitized payload as fallback ------
@@ -144,7 +152,7 @@ Deno.serve(async (req: Request) => {
       .from("rush_scores")
       .select("id, final_score")
       .eq("player_id", playerId)
-      .eq("duration_seconds", RUSH_DURATION_SECONDS)
+      .eq("duration_seconds", run.duration_seconds)
       .order("final_score", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -157,7 +165,7 @@ Deno.serve(async (req: Request) => {
         player_id: playerId,
         display_name: resolvedName,
         seed: run.seed,
-        duration_seconds: RUSH_DURATION_SECONDS,
+        duration_seconds: run.duration_seconds,
         final_score: breakdown.finalScore,
         points_earned: breakdown.pointsEarned,
         swap_penalties: breakdown.swapPenalties,
@@ -191,7 +199,7 @@ Deno.serve(async (req: Request) => {
     let rank: number | null = null;
     const { data: rankData, error: rankError } = await admin.rpc(
       "get_rush_rank",
-      { p_score: personalBest }
+      { p_score: personalBest, p_duration_seconds: run.duration_seconds }
     );
     if (!rankError && rankData != null) {
       rank = Number(rankData);

@@ -19,6 +19,7 @@ import {
   expireRun,
   finishRun,
   getRunningScore,
+  getRushDurationMs,
   getUsedRackIndices,
   moveBoardTile as engineMoveBoardTile,
   placeTile as enginePlaceTile,
@@ -28,9 +29,8 @@ import {
   shuffleRack as engineShuffleRack,
   submitTurn as engineSubmitTurn,
   swapTiles as engineSwapTiles,
-  RUSH_DURATION_MS,
 } from "./rushEngine";
-import type { SubmitDetail } from "./rushEngine";
+import type { RushRunConfig, SubmitDetail } from "./rushEngine";
 import {
   createRushRunOnServer,
   submitRushRunToServer,
@@ -97,7 +97,7 @@ export interface UseRushGameResult {
   syncState: RushSyncState;
   /** Global rank of the player's personal best, once the server confirms it. */
   submittedRank: number | null;
-  startNewRun: () => Promise<void>;
+  startNewRun: (config?: Partial<RushRunConfig>) => Promise<void>;
   resumeSavedRun: () => boolean;
   discardSavedRun: () => void;
   placeRackTile: (
@@ -137,7 +137,7 @@ export const useRushGame = (
 ): UseRushGameResult => {
   const dictionary = options.dictionary ?? defaultDictionary;
   const [state, setState] = useState<RushSnapshot | null>(null);
-  const [remainingMs, setRemainingMs] = useState(RUSH_DURATION_MS);
+  const [remainingMs, setRemainingMs] = useState(300_000);
   const [message, setMessage] = useState<GameMessage | null>(null);
   const [dictionaryReady, setDictionaryReady] = useState(
     dictionary.loaded ?? true
@@ -157,12 +157,17 @@ export const useRushGame = (
   const resultSavedRef = useRef(false);
   const draftSaveTimerRef = useRef<number | null>(null);
 
+  const getCurrentDurationMs = useCallback((): number => {
+    const current = stateRef.current;
+    return current ? getRushDurationMs(current) : 300_000;
+  }, []);
+
   const getElapsedMs = useCallback((): number => {
     const base = baseElapsedRef.current;
     const since = runningSinceRef.current;
     const elapsed = since == null ? base : base + (Date.now() - since);
-    return Math.min(elapsed, RUSH_DURATION_MS);
-  }, []);
+    return Math.min(elapsed, getCurrentDurationMs());
+  }, [getCurrentDurationMs]);
 
   const startClockIfNeeded = useCallback(() => {
     if (runningSinceRef.current != null) return;
@@ -172,12 +177,12 @@ export const useRushGame = (
   /** Freeze the countdown (pause menu). No-op if the clock never started. */
   const pauseClock = useCallback((): boolean => {
     if (runningSinceRef.current == null) return false;
+    const current = stateRef.current;
     baseElapsedRef.current = Math.min(
       baseElapsedRef.current + (Date.now() - runningSinceRef.current),
-      RUSH_DURATION_MS
+      getRushDurationMs(current ?? { durationSeconds: 300 })
     );
     runningSinceRef.current = null;
-    const current = stateRef.current;
     if (current && current.status === "active") {
       saveAutosave({ ...current, elapsedMs: baseElapsedRef.current });
     }
@@ -246,8 +251,8 @@ export const useRushGame = (
       setSyncState("local_only");
       return;
     }
-    // Server-enforced deadline mirror: started_at + 300s + 60s grace.
-    const deadlineAtMs = finished.startedAtWallMs + RUSH_DURATION_MS + 60_000;
+    const durationMs = getRushDurationMs(finished);
+    const deadlineAtMs = finished.startedAtWallMs + durationMs + 60_000;
     if (Date.now() > deadlineAtMs) {
       setSyncState("local_only");
       return;
@@ -282,7 +287,7 @@ export const useRushGame = (
       setState(finished);
       runningSinceRef.current = null;
       baseElapsedRef.current = finished.elapsedMs;
-      setRemainingMs(Math.max(0, RUSH_DURATION_MS - finished.elapsedMs));
+      setRemainingMs(Math.max(0, getRushDurationMs(finished) - finished.elapsedMs));
       clearAutosave();
       if (!resultSavedRef.current && finished.finalBreakdown) {
         resultSavedRef.current = true;
@@ -315,7 +320,7 @@ export const useRushGame = (
 
     const tick = () => {
       const elapsed = getElapsedMs();
-      const remaining = Math.max(0, RUSH_DURATION_MS - elapsed);
+      const remaining = Math.max(0, getRushDurationMs(state) - elapsed);
       setRemainingMs(remaining);
       if (remaining <= 0) {
         const current = stateRef.current;
@@ -360,7 +365,7 @@ export const useRushGame = (
     setMessage(null);
     setSyncState("idle");
     setSubmittedRank(null);
-    setRemainingMs(RUSH_DURATION_MS);
+    setRemainingMs(getRushDurationMs(run));
     setSavedRunAvailable(false);
     setState(run);
     saveAutosave(run);
@@ -372,12 +377,14 @@ export const useRushGame = (
    * timeout/offline fall back to a local seed marked local_only. When no
    * backend is configured, this resolves synchronously.
    */
-  const startNewRun = useCallback(async (): Promise<void> => {
+  const startNewRun = useCallback(async (
+    config?: Partial<RushRunConfig>
+  ): Promise<void> => {
     const startLocal = () => {
       const seed = `${Date.now().toString(36)}-${Math.floor(
         Math.random() * 1_000_000
       ).toString(36)}`;
-      mountRun(createRushRun(seed, Date.now()));
+      mountRun(createRushRun(seed, Date.now(), config));
     };
 
     if (!isBackendConfigured()) {
@@ -387,9 +394,11 @@ export const useRushGame = (
 
     setStarting(true);
     try {
-      const server = await createRushRunOnServer();
+      const server = await createRushRunOnServer(config);
       if (server) {
-        const run = createRushRun(server.seed, server.startedAtMs);
+        const run = createRushRun(server.seed, server.startedAtMs, {
+          durationSeconds: server.durationSeconds === 600 ? 600 : 300,
+        });
         run.runId = server.runId;
         run.eligibility = "eligible";
         mountRun(run);
@@ -414,9 +423,10 @@ export const useRushGame = (
     setMessage(null);
     setSavedRunAvailable(false);
 
-    if (resumed.elapsedMs >= RUSH_DURATION_MS) {
+    const durationMs = getRushDurationMs(resumed);
+    if (resumed.elapsedMs >= durationMs) {
       // Timer already spent; run ends immediately but the result still counts.
-      baseElapsedRef.current = RUSH_DURATION_MS;
+      baseElapsedRef.current = durationMs;
       runningSinceRef.current = null;
       finishAndRecord(expireRun(resumed));
       return true;
@@ -424,7 +434,7 @@ export const useRushGame = (
 
     baseElapsedRef.current = resumed.elapsedMs;
     runningSinceRef.current = resumed.elapsedMs > 0 ? Date.now() : null;
-    setRemainingMs(Math.max(0, RUSH_DURATION_MS - resumed.elapsedMs));
+    setRemainingMs(Math.max(0, durationMs - resumed.elapsedMs));
     setState(resumed);
     return true;
   }, [finishAndRecord]);

@@ -25,26 +25,30 @@ interface LeaderboardPageProps {
 export const LeaderboardPage = ({ onBack }: LeaderboardPageProps) => {
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
   const [yourRank, setYourRank] = useState<number | null>(null);
+  const [durationSeconds, setDurationSeconds] = useState<300 | 600>(300);
 
   const profile = loadProfile();
-  const best = getBestLocalResult();
+  const best = getBestLocalResult(undefined, durationSeconds);
 
   useEffect(() => {
     let cancelled = false;
-    void fetchRushLeaderboard(50).then((rows) => {
+    setPhase({ kind: "loading" });
+    setYourRank(null);
+    void fetchRushLeaderboard(50, durationSeconds).then((rows) => {
       if (cancelled) return;
       setPhase(rows ? { kind: "ready", rows } : { kind: "unavailable" });
     });
-    const bestScore = getBestLocalResult()?.breakdown.finalScore;
+    const bestScore = getBestLocalResult(undefined, durationSeconds)?.breakdown
+      .finalScore;
     if (typeof bestScore === "number") {
-      void fetchRushRank(bestScore).then((rank) => {
+      void fetchRushRank(bestScore, durationSeconds).then((rank) => {
         if (!cancelled) setYourRank(rank);
       });
     }
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [durationSeconds]);
 
   return (
     <div className="screen screen--leaderboard">
@@ -54,7 +58,33 @@ export const LeaderboardPage = ({ onBack }: LeaderboardPageProps) => {
         </button>
         <div className="lb-page__heading">
           <h1 className="lb-page__title">Leaderboard</h1>
-          <p className="lb-page__subtitle">5-Minute Rush · 11×11</p>
+          <p className="lb-page__subtitle">
+            {durationSeconds === 600
+              ? "10-Minute Classic Rush · 15×15"
+              : "5-Minute Rush · 11×11"}
+          </p>
+        </div>
+        <div className="lb-page__tabs" role="tablist" aria-label="Rush mode">
+          <button
+            className={`lb-page__tab${
+              durationSeconds === 300 ? " lb-page__tab--active" : ""
+            }`}
+            onClick={() => setDurationSeconds(300)}
+            role="tab"
+            aria-selected={durationSeconds === 300}
+          >
+            5 min
+          </button>
+          <button
+            className={`lb-page__tab${
+              durationSeconds === 600 ? " lb-page__tab--active" : ""
+            }`}
+            onClick={() => setDurationSeconds(600)}
+            role="tab"
+            aria-selected={durationSeconds === 600}
+          >
+            10 min
+          </button>
         </div>
       </header>
 

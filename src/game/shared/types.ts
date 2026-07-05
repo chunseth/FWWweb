@@ -36,8 +36,10 @@ export interface BoardTile {
 
 export type BoardCell = BoardTile | null;
 
-/** An 11x11 (mini) board. Row-major: board[row][col]. */
+/** Board cells, row-major: board[row][col]. */
 export type MiniBoard = BoardCell[][];
+
+export type RushBoardMode = "mini" | "classic";
 
 export type PremiumSquareType = "tw" | "dw" | "tl" | "dl" | "center";
 

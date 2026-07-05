@@ -88,15 +88,17 @@ const isJournalShape = (journal: unknown): boolean =>
 export const isValidSnapshot = (value: unknown): value is RushSnapshot => {
   if (typeof value !== "object" || value === null) return false;
   const s = value as Record<string, unknown>;
+  const boardSize = s.durationSeconds === 600 ? 15 : 11;
+  const durationSeconds = s.boardSize === 15 ? 600 : 300;
 
   return (
     s.schemaVersion === RUSH_SCHEMA_VERSION &&
     typeof s.seed === "string" &&
     s.seed.length > 0 &&
     (s.status === "active" || s.status === "expired") &&
-    s.boardSize === 11 &&
-    s.durationSeconds === 300 &&
-    isCellArray(s.board, 11) &&
+    s.boardSize === boardSize &&
+    s.durationSeconds === durationSeconds &&
+    isCellArray(s.board, boardSize) &&
     (s.boardAtTurnStart === null || Array.isArray(s.boardAtTurnStart)) &&
     typeof s.premiumSquares === "object" &&
     s.premiumSquares !== null &&
@@ -117,7 +119,7 @@ export const isValidSnapshot = (value: unknown): value is RushSnapshot => {
     isJournalShape(s.journal) &&
     isFiniteNumber(s.elapsedMs) &&
     s.elapsedMs >= 0 &&
-    s.elapsedMs <= 300 * 1000 &&
+    s.elapsedMs <= durationSeconds * 1000 &&
     isFiniteNumber(s.startedAtWallMs)
   );
 };

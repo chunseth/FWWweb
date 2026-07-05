@@ -69,10 +69,17 @@ export const saveLocalResult = (
 };
 
 export const getBestLocalResult = (
-  storage: StorageLike | null = defaultStorage()
+  storage: StorageLike | null = defaultStorage(),
+  durationSeconds?: number
 ): LocalRushResult | null => {
   let best: LocalRushResult | null = null;
   for (const result of loadLocalResults(storage)) {
+    if (
+      typeof durationSeconds === "number" &&
+      result.breakdown.durationSeconds !== durationSeconds
+    ) {
+      continue;
+    }
     if (isBetterRushResult(result.breakdown, best?.breakdown ?? null)) {
       best = result;
     }

@@ -55,6 +55,19 @@ describe("createRushRun", () => {
     expect(a.eligibility).toBe("local_only");
   });
 
+  it("creates a 10-minute classic run with a 15x15 board and normal bag", () => {
+    const state = createRushRun("classic-seed", 1000, {
+      durationSeconds: 600,
+    });
+
+    expect(state.boardSize).toBe(15);
+    expect(state.durationSeconds).toBe(600);
+    expect(state.rack).toHaveLength(7);
+    expect(state.bag).toHaveLength(100 - 7);
+    expect(state.premiumSquares["7,7"]).toBe("center");
+    expect(state.premiumSquares["5,5"]).toBe("tl");
+  });
+
   it("produces different racks for different seeds", () => {
     const a = createRushRun("seed-1", 1000);
     const b = createRushRun("seed-2", 1000);

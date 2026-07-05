@@ -22,7 +22,7 @@ create table if not exists public.web_rush_runs (
   final_score integer,
   created_at timestamptz not null default now(),
   constraint web_rush_runs_duration_check
-    check (duration_seconds = 300),
+    check (duration_seconds in (300, 600)),
   constraint web_rush_runs_status_check
     check (status in ('active', 'submitted', 'expired', 'invalid')),
   constraint web_rush_runs_seed_length_check
@@ -51,7 +51,8 @@ create policy "web_rush_runs_select_own"
 -- ---------------------------------------------------------------------------
 
 create or replace function public.get_rush_leaderboard(
-  limit_count integer default 25
+  limit_count integer default 25,
+  p_duration_seconds integer default 300
 )
 returns table (
   rank bigint,
@@ -76,13 +77,16 @@ as $$
       final_score,
       completed_at
     from public.rush_scores
-    where duration_seconds = 300
+    where duration_seconds = case
+      when p_duration_seconds = 600 then 600
+      else 300
+    end
     order by player_id, final_score desc, completed_at asc
   ) as best
   order by best.final_score desc, best.completed_at asc
   limit greatest(1, least(coalesce(limit_count, 25), 100));
 $$;
 
-revoke all on function public.get_rush_leaderboard(integer) from public;
-grant execute on function public.get_rush_leaderboard(integer)
+revoke all on function public.get_rush_leaderboard(integer, integer) from public;
+grant execute on function public.get_rush_leaderboard(integer, integer)
   to anon, authenticated;

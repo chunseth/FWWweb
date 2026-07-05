@@ -1,6 +1,6 @@
 import { memo } from "react";
+import type { CSSProperties } from "react";
 import { TileFace } from "./TileFace";
-import { MINI_BOARD_SIZE } from "../game/shared/premiumSquares";
 import type { MiniBoard as MiniBoardState, PremiumSquares } from "../game/shared/types";
 import type { DragSource } from "../game/rush/useTileDrag";
 
@@ -31,9 +31,10 @@ export const MiniBoard = memo(
     onTilePointerDown,
     interactive,
   }: MiniBoardProps) => {
+    const boardSize = board.length;
     const cells = [];
-    for (let row = 0; row < MINI_BOARD_SIZE; row += 1) {
-      for (let col = 0; col < MINI_BOARD_SIZE; col += 1) {
+    for (let row = 0; row < boardSize; row += 1) {
+      for (let col = 0; col < boardSize; col += 1) {
         const tile = board[row][col];
         const premium = premiumSquares[`${row},${col}`];
         const isDraft = Boolean(tile && tile.isFromRack && !tile.scored);
@@ -75,7 +76,11 @@ export const MiniBoard = memo(
     }
 
     return (
-      <div className="board" ref={boardRef}>
+      <div
+        className="board"
+        ref={boardRef}
+        style={{ "--board-size": boardSize } as CSSProperties}
+      >
         {cells}
       </div>
     );

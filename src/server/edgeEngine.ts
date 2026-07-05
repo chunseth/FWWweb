@@ -13,6 +13,7 @@
 import dictionaryWordsJson from "../data/dictionaryWords.json";
 import { Dictionary } from "../utils/dictionary";
 import type { DictionaryLike } from "../game/shared/types";
+import { CLASSIC_RUSH_DURATION_MS } from "../game/rush/rushEngine";
 
 export {
   createRushRun,
@@ -20,6 +21,8 @@ export {
   buildCurrentBreakdown,
   RUSH_DURATION_SECONDS,
   RUSH_DURATION_MS,
+  CLASSIC_RUSH_DURATION_SECONDS,
+  CLASSIC_RUSH_DURATION_MS,
   RUSH_SUBMIT_GRACE_MS,
 } from "../game/rush/rushEngine";
 
@@ -57,7 +60,7 @@ export const isPlausibleJournal = (value: unknown): boolean => {
       typeof atElapsedMs !== "number" ||
       !Number.isFinite(atElapsedMs) ||
       atElapsedMs < 0 ||
-      atElapsedMs > 300_000 ||
+      atElapsedMs > CLASSIC_RUSH_DURATION_MS ||
       atElapsedMs < lastElapsed
     ) {
       return false;

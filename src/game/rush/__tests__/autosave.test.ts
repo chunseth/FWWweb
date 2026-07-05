@@ -131,12 +131,24 @@ describe("isValidSnapshot", () => {
     expect(isValidSnapshot(createRushRun("seed", 1000))).toBe(true);
   });
 
+  it("accepts a 10-minute classic run", () => {
+    expect(
+      isValidSnapshot(createRushRun("classic-seed", 1000, { durationSeconds: 600 }))
+    ).toBe(true);
+  });
+
   it("rejects tampered timers", () => {
     const state = createRushRun("seed", 1000);
     expect(isValidSnapshot({ ...state, elapsedMs: -5 })).toBe(false);
     expect(isValidSnapshot({ ...state, elapsedMs: 10_000_000 })).toBe(false);
     expect(isValidSnapshot({ ...state, durationSeconds: 999 })).toBe(false);
     expect(isValidSnapshot({ ...state, boardSize: 15 })).toBe(false);
+    expect(
+      isValidSnapshot({
+        ...createRushRun("classic-seed", 1000, { durationSeconds: 600 }),
+        durationSeconds: 300,
+      })
+    ).toBe(false);
   });
 });
 

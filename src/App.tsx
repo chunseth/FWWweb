@@ -18,7 +18,6 @@ import type { StoredProfile } from "./services/usernameService";
 import { LeaderboardPage } from "./components/LeaderboardPage";
 import { isBackendConfigured } from "./services/supabaseClient";
 import { BLANK_LETTER } from "./game/shared/bag";
-import { MINI_BOARD_SIZE } from "./game/shared/premiumSquares";
 import { getPlacedCells, validateSubmitTurn } from "./game/shared/validation";
 import { scoreSubmittedWords } from "./game/shared/scoring";
 import { dictionary } from "./utils/dictionary";
@@ -75,6 +74,7 @@ export const App = () => {
   );
   const [editingName, setEditingName] = useState(false);
   const [showComboModal, setShowComboModal] = useState(false);
+  const [pendingStartDuration, setPendingStartDuration] = useState<300 | 600>(300);
   const [paused, setPaused] = useState(false);
   const [musicEnabled, setMusicEnabled] = useState(true);
   const [musicVolume, setMusicVolume] = useState(DEFAULT_MUSIC_VOLUME);
@@ -140,9 +140,10 @@ export const App = () => {
     const el = boardWrapRef.current;
     if (!el) return;
     const apply = (width: number) => {
+      const boardSize = state?.boardSize ?? 11;
       document.documentElement.style.setProperty(
         "--cell-size",
-        `${width / MINI_BOARD_SIZE}px`
+        `${width / boardSize}px`
       );
     };
     apply(el.getBoundingClientRect().width);
@@ -153,7 +154,7 @@ export const App = () => {
     });
     observer.observe(el);
     return () => observer.disconnect();
-  }, [state != null]);
+  }, [state?.boardSize]);
 
   // Toast auto-dismiss.
   useEffect(() => {
@@ -256,6 +257,7 @@ export const App = () => {
     onDropOnRack,
     onRackPreview: setRackPreview,
     onTap,
+    boardSize: state?.boardSize ?? 11,
   });
 
   const placedCount = useMemo(
@@ -283,7 +285,7 @@ export const App = () => {
       premiumSquares: state.premiumSquares,
       turnCount: state.turnCount,
       placedCells: validation.placedCells,
-      bonusMode: "mini",
+      bonusMode: state.boardSize === 15 ? "classic" : "mini",
     });
     return {
       valid: true as const,
@@ -324,7 +326,9 @@ export const App = () => {
     cancelSwap();
     setPendingBlank(null);
     playMusic();
-    game.startNewRun();
+    game.startNewRun({
+      durationSeconds: state?.durationSeconds === 600 ? 600 : 300,
+    });
   };
 
   // ---------- swap ----------
@@ -403,27 +407,30 @@ export const App = () => {
 
   // ---------- start / menu ----------
 
-  const requestStart = () => {
+  const requestStart = (durationSeconds: 300 | 600 = 300) => {
     playMusic();
     if (!comboExplained()) {
+      setPendingStartDuration(durationSeconds);
       setShowComboModal(true);
       return;
     }
-    game.startNewRun();
+    game.startNewRun({ durationSeconds });
   };
 
   const startFromComboModal = () => {
     markComboExplained();
     setShowComboModal(false);
     playMusic();
-    game.startNewRun();
+    game.startNewRun({ durationSeconds: pendingStartDuration });
   };
 
   const handlePlayAgain = () => {
     cancelSwap();
     setPendingBlank(null);
     playMusic();
-    game.startNewRun();
+    game.startNewRun({
+      durationSeconds: state?.durationSeconds === 600 ? 600 : 300,
+    });
   };
 
   const resumeSavedRun = () => {
@@ -569,7 +576,9 @@ export const App = () => {
             />
             <h1 className="menu__title">Friends With Words</h1>
           </div>
-          <p className="menu__subtitle">5-Minute Rush · 11×11 board</p>
+          <p className="menu__subtitle">
+            5-Minute Mini or 10-Minute Classic
+          </p>
           {best ? (
             <p className="menu__best">Best score: {best.breakdown.finalScore}</p>
           ) : null}
@@ -609,17 +618,30 @@ export const App = () => {
               </button>
             </>
           ) : (
-            <button
-              className="btn btn--primary"
-              onClick={requestStart}
-              disabled={!dictionaryReady || !profile || editingName || starting}
-            >
-              {!dictionaryReady
-                ? "Loading words…"
-                : starting
+            <>
+              <button
+                className="btn btn--primary"
+                onClick={() => requestStart(300)}
+                disabled={!dictionaryReady || !profile || editingName || starting}
+              >
+                {!dictionaryReady
+                  ? "Loading words…"
+                  : starting
                   ? "Starting…"
-                  : "Start Rush"}
-            </button>
+                    : "5-Minute Mini Rush"}
+              </button>
+              <button
+                className="btn btn--primary"
+                onClick={() => requestStart(600)}
+                disabled={!dictionaryReady || !profile || editingName || starting}
+              >
+                {!dictionaryReady
+                  ? "Loading words…"
+                  : starting
+                    ? "Starting…"
+                    : "10-Minute Classic Rush"}
+              </button>
+            </>
           )}
 
           {isBackendConfigured() ? (

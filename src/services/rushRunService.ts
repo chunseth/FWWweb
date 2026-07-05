@@ -14,12 +14,14 @@
 import { getSupabaseClient } from "./supabaseClient";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { RushTurnEntry } from "../game/shared/types";
+import type { RushRunConfig } from "../game/rush/rushEngine";
 
 export interface ServerRun {
   runId: string;
   seed: string;
   startedAtMs: number;
   deadlineAtMs: number;
+  durationSeconds: number;
 }
 
 export type SubmitOutcome =
@@ -46,6 +48,7 @@ const ensureSession = async (supabase: SupabaseClient): Promise<boolean> => {
 };
 
 export const createRushRunOnServer = async (
+  config?: Partial<RushRunConfig>,
   timeoutMs = 2500
 ): Promise<ServerRun | null> => {
   const supabase = getSupabaseClient();
@@ -54,7 +57,10 @@ export const createRushRunOnServer = async (
   const attempt = (async (): Promise<ServerRun | null> => {
     if (!(await ensureSession(supabase))) return null;
     const { data, error } = await supabase.functions.invoke("create-rush-run", {
-      body: {},
+      body: {
+        durationSeconds: config?.durationSeconds,
+        mode: config?.mode,
+      },
     });
     if (
       error ||
@@ -67,7 +73,14 @@ export const createRushRunOnServer = async (
     const startedAtMs = Date.parse(data.startedAt) || Date.now();
     const deadlineAtMs =
       Date.parse(data.deadlineAt) || startedAtMs + 360_000;
-    return { runId: data.runId, seed: data.seed, startedAtMs, deadlineAtMs };
+    return {
+      runId: data.runId,
+      seed: data.seed,
+      startedAtMs,
+      deadlineAtMs,
+      durationSeconds:
+        typeof data.durationSeconds === "number" ? data.durationSeconds : 300,
+    };
   })();
 
   const timeout = new Promise<null>((resolve) =>
@@ -143,12 +156,16 @@ export const submitRushRunToServer = async (
 };
 
 /** Global rank a given score would hold on the 5-minute Rush leaderboard. */
-export const fetchRushRank = async (score: number): Promise<number | null> => {
+export const fetchRushRank = async (
+  score: number,
+  durationSeconds = 300
+): Promise<number | null> => {
   const supabase = getSupabaseClient();
   if (!supabase) return null;
   try {
     const { data, error } = await supabase.rpc("get_rush_rank", {
       p_score: score,
+      p_duration_seconds: durationSeconds,
     });
     if (error || data == null) return null;
     const rank = Number(data);
@@ -167,13 +184,15 @@ export interface LeaderboardRow {
 
 /** Public leaderboard via the safe RPC (no player ids exposed). */
 export const fetchRushLeaderboard = async (
-  limit = 25
+  limit = 25,
+  durationSeconds = 300
 ): Promise<LeaderboardRow[] | null> => {
   const supabase = getSupabaseClient();
   if (!supabase) return null;
   try {
     const { data, error } = await supabase.rpc("get_rush_leaderboard", {
       limit_count: limit,
+      p_duration_seconds: durationSeconds,
     });
     if (error || !Array.isArray(data)) return null;
     return data.map((row) => ({

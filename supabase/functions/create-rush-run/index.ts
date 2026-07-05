@@ -13,6 +13,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { handleOptions, json } from "../_shared/http.ts";
 import {
+  CLASSIC_RUSH_DURATION_SECONDS,
   RUSH_DURATION_SECONDS,
   RUSH_SUBMIT_GRACE_MS,
 } from "../_shared/engine.mjs";
@@ -42,6 +43,21 @@ Deno.serve(async (req: Request) => {
       return json({ error: "unauthorized" }, 401);
     }
     const playerId = userData.user.id;
+    let body: unknown = {};
+    try {
+      body = await req.json();
+    } catch {
+      body = {};
+    }
+    const requested = (body ?? {}) as {
+      durationSeconds?: unknown;
+      mode?: unknown;
+    };
+    const durationSeconds =
+      requested.durationSeconds === CLASSIC_RUSH_DURATION_SECONDS ||
+      requested.mode === "classic"
+        ? CLASSIC_RUSH_DURATION_SECONDS
+        : RUSH_DURATION_SECONDS;
 
     // Cheap rate limit: bound run creation per player.
     const hourAgo = new Date(Date.now() - 3_600_000).toISOString();
@@ -63,7 +79,7 @@ Deno.serve(async (req: Request) => {
 
     const startedAt = new Date();
     const deadlineAt = new Date(
-      startedAt.getTime() + RUSH_DURATION_SECONDS * 1000 + RUSH_SUBMIT_GRACE_MS
+      startedAt.getTime() + durationSeconds * 1000 + RUSH_SUBMIT_GRACE_MS
     );
 
     const { data: run, error: insertError } = await admin
@@ -71,7 +87,7 @@ Deno.serve(async (req: Request) => {
       .insert({
         player_id: playerId,
         seed,
-        duration_seconds: RUSH_DURATION_SECONDS,
+        duration_seconds: durationSeconds,
         status: "active",
         started_at: startedAt.toISOString(),
         deadline_at: deadlineAt.toISOString(),
@@ -83,7 +99,7 @@ Deno.serve(async (req: Request) => {
     return json({
       runId: run.id,
       seed,
-      durationSeconds: RUSH_DURATION_SECONDS,
+      durationSeconds,
       startedAt: startedAt.toISOString(),
       deadlineAt: deadlineAt.toISOString(),
     });

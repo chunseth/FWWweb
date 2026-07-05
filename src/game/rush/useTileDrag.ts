@@ -15,7 +15,6 @@
  */
 
 import { useCallback, useEffect, useRef } from "react";
-import { MINI_BOARD_SIZE } from "../shared/premiumSquares";
 
 export type DragSource =
   | { type: "rack"; rackIndex: number }
@@ -33,6 +32,7 @@ export interface DropTargets {
   /** Pointer down+up without movement. */
   onTap: (source: DragSource) => void;
   canDropOnCell: (row: number, col: number) => boolean;
+  boardSize: number;
 }
 
 export interface TileDragApi {
@@ -122,7 +122,8 @@ export const useTileDrag = (targets: DropTargets): TileDragApi => {
     const rackEl = rackRef.current;
     const boardRect = boardEl?.getBoundingClientRect() ?? null;
     const rackRect = rackEl?.getBoundingClientRect() ?? null;
-    const cellSize = boardRect ? boardRect.width / MINI_BOARD_SIZE : 0;
+    const boardSize = targetsRef.current.boardSize;
+    const cellSize = boardRect ? boardRect.width / boardSize : 0;
     const rackSlots = rackEl
       ? Array.from(rackEl.querySelectorAll<HTMLElement>("[data-rack-tile]")).map(
           (el, visibleIndex) => ({
@@ -162,7 +163,7 @@ export const useTileDrag = (targets: DropTargets): TileDragApi => {
     }
     const col = Math.floor((x - rect.left) / geometry.cellSize);
     const row = Math.floor((y - rect.top) / geometry.cellSize);
-    if (row < 0 || col < 0 || row >= MINI_BOARD_SIZE || col >= MINI_BOARD_SIZE) {
+    if (row < 0 || col < 0 || row >= targetsRef.current.boardSize || col >= targetsRef.current.boardSize) {
       return null;
     }
     return { row, col };
