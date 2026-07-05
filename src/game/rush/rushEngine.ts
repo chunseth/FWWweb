@@ -29,7 +29,10 @@ import {
   TIME_BONUS_PROFILE_MINI,
 } from "../shared/scoring";
 import { validateSubmitTurn, getPlacedCells } from "../shared/validation";
-import { buildResolvedSubmitPayload } from "../shared/turnResolution";
+import {
+  buildResolvedSubmitPayload,
+  sortRackTilesById,
+} from "../shared/turnResolution";
 import type {
   BagTile,
   DictionaryLike,
@@ -343,19 +346,26 @@ export const reorderRack = (
   return { ...state, rack: next, board };
 };
 
-/** Shuffle visible rack tiles without spending a turn or changing score. */
+/**
+ * Shuffle visible rack tiles without spending a turn or changing score.
+ *
+ * Purely cosmetic, so it deliberately does NOT touch the seeded RNG:
+ * shuffles are not journaled, and burning deterministic RNG state here would
+ * desync every subsequent swap draw during server replay (replay_rejected
+ * for honest players). Journal placements resolve by tile identity, so rack
+ * order itself never matters to validation.
+ */
 export const shuffleRack = (state: RushSnapshot): RushSnapshot => {
   if (state.status !== "active") return state;
   if (getUsedRackIndices(state).size > 0) return state;
   if (state.rack.length < 2) return state;
 
-  const random = createSeededRandom(state.seed, state.randomState);
-  const rack = shuffleArray(state.rack, random.next).map((tile, rackIndex) => ({
+  const rack = shuffleArray(state.rack, Math.random).map((tile, rackIndex) => ({
     ...tile,
     rackIndex,
   }));
 
-  return { ...state, rack, randomState: random.getState() };
+  return { ...state, rack };
 };
 
 export interface SubmitDetail {
@@ -388,13 +398,21 @@ export const submitTurn = (
 
   const { placedCells, words, newWords } = validation;
 
-  // Record journal placements before the board is resolved.
+  // Record journal placements before the board is resolved. Placements carry
+  // the TILE IDENTITY (rack letter + value), not just the rack index: players
+  // reorder and shuffle their racks freely and those actions are not
+  // journaled, so indices alone cannot survive an honest replay.
   const placements: JournalPlacement[] = placedCells.map(({ row, col }) => {
     const tile = state.board[row][col]!;
+    const rackTile =
+      tile.rackIndex !== undefined ? state.rack[tile.rackIndex] : undefined;
     const placement: JournalPlacement = {
       row,
       col,
       rackIndex: tile.rackIndex ?? -1,
+      id: rackTile?.id,
+      letter: rackTile?.letter ?? (tile.isBlank ? BLANK_LETTER : tile.letter),
+      value: rackTile?.value ?? tile.value,
     };
     if (tile.isBlank) placement.blankLetter = tile.letter;
     return placement;
@@ -532,8 +550,8 @@ export const swapTiles = (
     nextTileId += 1;
   }
 
-  const remainingRack = cleared.rack.filter(
-    (_, index) => !indicesToRemove.includes(index)
+  const remainingRack = sortRackTilesById(
+    cleared.rack.filter((tile) => !removedTiles.some((removed) => removed.id === tile.id))
   );
   const resultingRack = [...remainingRack, ...drawnTiles].map(
     (tile, rackIndex) => ({ ...tile, rackIndex })
@@ -563,6 +581,12 @@ export const swapTiles = (
         type: "swap",
         turn: cleared.turnCount + 1,
         rackIndices: indicesToRemove,
+        // Identities survive rack reorders/shuffles; replay prefers these.
+        tiles: removedTiles.map((tile) => ({
+          id: tile.id,
+          letter: tile.letter,
+          value: tile.value,
+        })),
         penalty: scorePenalty,
         atElapsedMs,
       },
@@ -630,6 +654,54 @@ export interface ReplayResult {
  * Rebuild a run from its seed and journal. Used to validate autosaves and, in
  * the future, by the server to recompute an authoritative score.
  */
+/** Does this rack tile match a journaled tile identity? */
+const matchesIdentity = (
+  tile: Tile,
+  letter: string,
+  value: number
+): boolean => {
+  if (value === 0 && tile.value === 0) {
+    // Blanks: the rack letter may be " " or "" depending on source.
+    const identBlank = letter === BLANK_LETTER || letter === "";
+    if (identBlank && isBlankRackTile(tile)) return true;
+  }
+  return tile.letter === letter && tile.value === value;
+};
+
+/**
+ * Resolve a journaled tile to a current rack index. Prefers stable tile id,
+ * then letter + value (ambiguous when duplicates are in the rack), then the
+ * recorded index for journals written before identities were recorded.
+ */
+export const resolveRackIndex = (
+  state: RushSnapshot,
+  ident: {
+    id?: string | number;
+    letter?: string;
+    value?: number;
+    rackIndex?: number;
+  },
+  used: Set<number>
+): number => {
+  if (ident.id !== undefined) {
+    for (let i = 0; i < state.rack.length; i += 1) {
+      if (!used.has(i) && state.rack[i].id === ident.id) {
+        return i;
+      }
+    }
+    return -1;
+  }
+  if (ident.letter !== undefined && ident.value !== undefined) {
+    for (let i = 0; i < state.rack.length; i += 1) {
+      if (!used.has(i) && matchesIdentity(state.rack[i], ident.letter, ident.value)) {
+        return i;
+      }
+    }
+    return -1;
+  }
+  return ident.rackIndex ?? -1;
+};
+
 export const replayJournal = (
   seed: string,
   journal: RushSnapshot["journal"],
@@ -642,9 +714,21 @@ export const replayJournal = (
   for (const entry of journal) {
     if (entry.type === "submit") {
       for (const placement of entry.placements) {
+        const rackIndex = resolveRackIndex(
+          state,
+          placement,
+          getUsedRackIndices(state)
+        );
+        if (rackIndex < 0) {
+          return {
+            ok: false,
+            state: null,
+            error: `Replay placement failed on turn ${entry.turn}: no matching rack tile`,
+          };
+        }
         const placed = placeTile(
           state,
-          placement.rackIndex,
+          rackIndex,
           placement.row,
           placement.col,
           placement.blankLetter ?? null
@@ -675,7 +759,27 @@ export const replayJournal = (
       }
       state = submitted.state;
     } else if (entry.type === "swap") {
-      const swapped = swapTiles(state, entry.rackIndices, entry.atElapsedMs);
+      // Resolve swapped tiles by identity (order-independent); fall back to
+      // the raw indices for journals written before identities were recorded.
+      let swapIndices = entry.rackIndices;
+      if (Array.isArray(entry.tiles) && entry.tiles.length > 0) {
+        const used = new Set<number>();
+        const resolved: number[] = [];
+        for (const ident of entry.tiles) {
+          const index = resolveRackIndex(state, ident, used);
+          if (index < 0) {
+            return {
+              ok: false,
+              state: null,
+              error: `Replay swap failed on turn ${entry.turn}: no matching rack tile`,
+            };
+          }
+          used.add(index);
+          resolved.push(index);
+        }
+        swapIndices = resolved;
+      }
+      const swapped = swapTiles(state, swapIndices, entry.atElapsedMs);
       if (!swapped.ok) {
         return {
           ok: false,

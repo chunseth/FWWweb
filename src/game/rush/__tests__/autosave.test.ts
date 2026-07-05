@@ -63,7 +63,16 @@ describe("autosave round trip", () => {
     expect(stable.board[5][5]).toBeNull();
 
     const draft = extractDraftPlacements(state);
-    expect(draft).toEqual([{ row: 5, col: 5, rackIndex: 0 }]);
+    expect(draft).toEqual([
+      {
+        row: 5,
+        col: 5,
+        rackIndex: 0,
+        id: 0,
+        letter: "O",
+        value: 1,
+      },
+    ]);
   });
 });
 

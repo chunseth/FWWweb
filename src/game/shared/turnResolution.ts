@@ -10,6 +10,10 @@ import type {
   WordOnBoard,
 } from "./types";
 
+/** Canonical rack order for replay: cosmetic shuffles must not affect commits. */
+export const sortRackTilesById = (tiles: Tile[]): Tile[] =>
+  [...tiles].sort((a, b) => Number(a.id) - Number(b.id));
+
 export const buildBoardOccupancySnapshot = (
   board: BoardCell[][]
 ): boolean[][] => board.map((row) => row.map((cell) => cell !== null));
@@ -76,18 +80,21 @@ export const buildResolvedSubmitPayload = ({
     bonusMode,
   });
 
-  const usedIndices = new Set<number>();
+  const usedIds = new Set<string | number>();
   placedCells.forEach(({ row, col }) => {
     const tile = board[row][col];
     if (tile && tile.isFromRack && tile.rackIndex !== undefined) {
-      usedIndices.add(tile.rackIndex);
+      const rackTile = tileRack[tile.rackIndex];
+      if (rackTile) usedIds.add(rackTile.id);
     }
   });
 
-  const remainingRack = tileRack.filter((_, index) => !usedIndices.has(index));
+  const remainingRack = sortRackTilesById(
+    tileRack.filter((tile) => !usedIds.has(tile.id))
+  );
   const drawResult = drawTilesFromBag(
     tileBag,
-    usedIndices.size,
+    usedIds.size,
     nextTileId,
     drawOwnerId
   );

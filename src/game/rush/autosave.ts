@@ -10,7 +10,13 @@
  * falls back to the stable snapshot; a corrupt stable snapshot is discarded.
  */
 
-import { placeTile, RUSH_SCHEMA_VERSION } from "./rushEngine";
+import { BLANK_LETTER } from "../shared/bag";
+import {
+  getUsedRackIndices,
+  placeTile,
+  resolveRackIndex,
+  RUSH_SCHEMA_VERSION,
+} from "./rushEngine";
 import type {
   JournalPlacement,
   RushSnapshot,
@@ -133,7 +139,16 @@ export const extractDraftPlacements = (
     for (let col = 0; col < state.boardSize; col += 1) {
       const tile = state.board[row][col];
       if (tile && tile.isFromRack && !tile.scored && tile.rackIndex !== undefined) {
-        const placement: JournalPlacement = { row, col, rackIndex: tile.rackIndex };
+        const rackTile = state.rack[tile.rackIndex];
+        const placement: JournalPlacement = {
+          row,
+          col,
+          rackIndex: tile.rackIndex,
+          id: rackTile?.id,
+          letter:
+            rackTile?.letter ?? (tile.isBlank ? BLANK_LETTER : tile.letter),
+          value: rackTile?.value ?? tile.value,
+        };
         if (tile.isBlank) placement.blankLetter = tile.letter;
         placements.push(placement);
       }
@@ -222,9 +237,18 @@ export const loadAutosave = (
           draftOk = false;
           break;
         }
+        const rackIndex = resolveRackIndex(
+          draftState,
+          placement,
+          getUsedRackIndices(draftState)
+        );
+        if (rackIndex < 0) {
+          draftOk = false;
+          break;
+        }
         const placed = placeTile(
           draftState,
-          placement.rackIndex,
+          rackIndex,
           placement.row,
           placement.col,
           placement.blankLetter ?? null

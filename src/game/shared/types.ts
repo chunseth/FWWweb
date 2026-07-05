@@ -100,9 +100,26 @@ export interface RushScoreBreakdown {
 export interface JournalPlacement {
   row: number;
   col: number;
+  /**
+   * Rack position at play time. UNRELIABLE for replay: the player may have
+   * reordered or shuffled the rack (neither is journaled). Kept for
+   * backward compatibility with old journals; replay resolves by identity.
+   */
   rackIndex: number;
+  /** Stable tile id from the run; preferred for replay when present. */
+  id?: string | number;
+  /** Tile identity (rack letter — " " for blanks — and point value). */
+  letter?: string;
+  value?: number;
   /** Only present for blank tiles: the letter the player assigned. */
   blankLetter?: string;
+}
+
+/** Tile identity recorded for swapped tiles (order-independent replay). */
+export interface JournalTileIdentity {
+  id?: string | number;
+  letter: string;
+  value: number;
 }
 
 /**
@@ -121,7 +138,10 @@ export type RushTurnEntry =
   | {
       type: "swap";
       turn: number;
+      /** Rack positions at play time; unreliable after reorders (see above). */
       rackIndices: number[];
+      /** Tile identities; preferred by replay when present. */
+      tiles?: JournalTileIdentity[];
       penalty: number;
       atElapsedMs: number;
     };

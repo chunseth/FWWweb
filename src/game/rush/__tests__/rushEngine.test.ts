@@ -265,6 +265,7 @@ describe("shuffleRack", () => {
     expect(next.rack.map((tile) => tile.id).sort()).toEqual(
       state.rack.map((tile) => tile.id).sort()
     );
+    expect(next.randomState).toBe(state.randomState);
   });
 });
 
@@ -392,6 +393,29 @@ describe("replayJournal", () => {
     expect(crossMode.ok).toBe(false);
   });
 
+  it("reconstructs a run after rack shuffle (including duplicate letters)", () => {
+    const seed = "dup-test-2";
+    let state = createRushRun(seed, 1000);
+    state = shuffleRack(state);
+
+    const target = state.rack.find((tile) => tile.id === 4);
+    expect(target?.letter).toBe("N");
+    const targetIdx = state.rack.indexOf(target!);
+    const partnerIdx = state.rack.findIndex(
+      (tile, index) => index !== targetIdx && tile.letter === "T"
+    );
+    expect(partnerIdx).toBeGreaterThanOrEqual(0);
+
+    state = place(state, targetIdx, 5, 5);
+    state = place(state, partnerIdx, 5, 6);
+    state = submit(state).state;
+
+    const replay = replayJournal(seed, state.journal, acceptAll, 1000);
+    expect(replay.ok).toBe(true);
+    expect(replay.state?.rack).toEqual(state.rack);
+    expect(replay.state?.wordPointsTotal).toBe(state.wordPointsTotal);
+  });
+
   it("reconstructs a multi-turn run (submits + swap) exactly", () => {
     let state = createRushRun("seed-8", 1000);
     state = place(state, 0, 5, 5);
@@ -443,7 +467,13 @@ describe("replayJournal", () => {
       entry.type === "submit"
         ? {
             ...entry,
-            placements: entry.placements.map((p) => ({ ...p, rackIndex: 99 })),
+            placements: entry.placements.map((p) => ({
+              ...p,
+              rackIndex: 99,
+              id: 9999,
+              letter: "Q",
+              value: 10,
+            })),
           }
         : entry
     );
