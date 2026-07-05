@@ -3,6 +3,7 @@ const loadDictionaryWords = async (): Promise<string[]> => {
   const module = await import("../data/dictionaryWords.json");
   return module.default as string[];
 };
+import { INVALID_DICTIONARY_WORDS } from "../data/invalidDictionaryWords";
 import scrabbleLoanwords from "../data/scrabbleLoanwords";
 
 const LOAD_CHUNK_SIZE = 5000;
@@ -2610,6 +2611,10 @@ export class Dictionary {
 
     for (let index = 0; index < dictionaryWords.length; index += 1) {
       const word = dictionaryWords[index];
+      if (INVALID_DICTIONARY_WORDS.has(word)) {
+        continue;
+      }
+
       if (word.length === 2 && !VALID_TWO_LETTER_WORDS.has(word)) {
         continue;
       }
@@ -2668,6 +2673,7 @@ export class Dictionary {
     const normalizedWord = word.toLowerCase();
     if (
       (normalizedWord.length <= 3 && INVALID_SHORT_WORDS.has(normalizedWord)) ||
+      INVALID_DICTIONARY_WORDS.has(normalizedWord) ||
       INVALID_IRREGULAR_INFLECTIONS.has(normalizedWord)
     ) {
       return false;
@@ -2686,16 +2692,26 @@ export class Dictionary {
   hasKnownBaseForm(
     candidates: string[],
     derivedWord = "",
-    options: { allowSecondSuffixOnEnEr?: boolean } = {}
+    options: { allowSecondSuffixOnEnEr?: boolean; suffix?: string } = {}
   ): boolean {
-    const { allowSecondSuffixOnEnEr = false } = options;
+    const { allowSecondSuffixOnEnEr = false, suffix = "" } = options;
     return candidates.some((candidate) => {
       if (!candidate) return false;
 
-      // Prevent double suffix chains like "evoker" + "ed" => "evokered"
-      // unless the resulting word is explicitly allowlisted.
       if (
-        (candidate.endsWith("en") || candidate.endsWith("er")) &&
+        (suffix === "ed" || suffix === "er") &&
+        candidate === derivedWord.slice(0, -suffix.length) &&
+        this.shouldDoubleFinalConsonant(candidate)
+      ) {
+        return false;
+      }
+
+      // Prevent double suffix chains like "evoker" + "ed" => "evokered".
+      // Bases ending in -en can still take normal suffixes (open -> opened);
+      // this guard targets the -er agent/comparative chain that caused most
+      // false positives.
+      if (
+        candidate.endsWith("er") &&
         !allowSecondSuffixOnEnEr &&
         !VALID_SECOND_SUFFIX_ON_EN_ER.has(derivedWord)
       ) {
@@ -2739,6 +2755,7 @@ export class Dictionary {
       const allowSecondSuffixOnEnEr = word.endsWith("ers");
       return this.hasKnownBaseForm([word.slice(0, -1)], word, {
         allowSecondSuffixOnEnEr,
+        suffix: "s",
       });
     }
 
@@ -2762,16 +2779,14 @@ export class Dictionary {
         base,
         `${base}e`,
         this.removeDoubledTrailingConsonant(base),
-      ], word);
+      ], word, { suffix: "ed" });
     }
 
     if (word.endsWith("en") && word.length > 4) {
       const base = word.slice(0, -2);
       return this.hasKnownBaseForm([
-        base,
-        `${base}e`,
         this.removeDoubledTrailingConsonant(base),
-      ], word);
+      ], word, { suffix: "en" });
     }
 
     if (word.endsWith("ier") && word.length > 4) {
@@ -2795,7 +2810,7 @@ export class Dictionary {
         base,
         `${base}e`,
         this.removeDoubledTrailingConsonant(base),
-      ], word);
+      ], word, { suffix: "er" });
     }
 
     // Adverbs: adjective + -ly (quickly, gently, happily, nationally, economically)
@@ -2832,6 +2847,26 @@ export class Dictionary {
     }
 
     return "";
+  }
+
+  shouldDoubleFinalConsonant(base: string): boolean {
+    if (base.length < 3) {
+      return false;
+    }
+
+    if (base.endsWith("en")) {
+      return false;
+    }
+
+    const lastChar = base[base.length - 1];
+    const secondLastChar = base[base.length - 2];
+    const thirdLastChar = base[base.length - 3];
+
+    return (
+      !/[aeiouwxy]/.test(lastChar) &&
+      /[aeiou]/.test(secondLastChar) &&
+      !/[aeiou]/.test(thirdLastChar)
+    );
   }
 }
 

@@ -12,8 +12,17 @@ describe("dictionary validation", () => {
     expect(dictionary.isValid("evokering")).toBe(false);
   });
 
+  it("rejects player-reported nonwords from the broad source list and suffix fallback", () => {
+    ["oneer", "lettice", "jamboned", "rexer"].forEach((word) => {
+      expect(dictionary.isValid(word)).toBe(false);
+      expect(dictionary.isValid(word.toUpperCase())).toBe(false);
+    });
+  });
+
   it("still accepts standard forms like evoked", () => {
     expect(dictionary.isValid("evoked")).toBe(true);
+    expect(dictionary.isValid("opened")).toBe(true);
+    expect(dictionary.isValid("opens")).toBe(true);
     expect(dictionary.isValid("brokenly")).toBe(true);
     expect(dictionary.isValid("cleverly")).toBe(true);
     expect(dictionary.isValid("happier")).toBe(true);
@@ -23,6 +32,21 @@ describe("dictionary validation", () => {
     expect(dictionary.isValid("buyer")).toBe(true);
     expect(dictionary.isValid("flyer")).toBe(true);
     expect(dictionary.isValid("pryer")).toBe(true);
+  });
+
+  it("rejects overgenerated suffix forms", () => {
+    ["oneen", "reden", "stemed", "stemer"].forEach((word) => {
+      expect(dictionary.isValid(word)).toBe(false);
+    });
+    expect(dictionary.isValid("redder")).toBe(true);
+    expect(dictionary.isValid("stemmer")).toBe(true);
+  });
+
+  it("rejects common proper nouns that leak from the broad source list", () => {
+    ["john", "mary", "paris", "texas"].forEach((word) => {
+      expect(dictionary.isValid(word)).toBe(false);
+      expect(dictionary.isValid(word.toUpperCase())).toBe(false);
+    });
   });
 
   it("accepts Scrabble-valid borrowed words missing from the base list", () => {
