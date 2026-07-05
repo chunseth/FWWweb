@@ -33,7 +33,7 @@ describe("App", () => {
   it("requires a username before starting", async () => {
     render(<App />);
     expect(screen.getByLabelText(/pick a username/i)).toBeTruthy();
-    const start = await screen.findByRole("button", { name: /start rush/i });
+    const start = await screen.findByRole("button", { name: /5-minute mini rush/i });
     expect((start as HTMLButtonElement).disabled).toBe(true);
   });
 
@@ -43,7 +43,7 @@ describe("App", () => {
       JSON.stringify({ username: "TestPlayer", verified: false, savedAtMs: 1 })
     );
     render(<App />);
-    const start = await screen.findByRole("button", { name: /start rush/i });
+    const start = await screen.findByRole("button", { name: /5-minute mini rush/i });
     await vi.waitFor(() => {
       expect((start as HTMLButtonElement).disabled).toBe(false);
     });
@@ -64,10 +64,10 @@ describe("App", () => {
   it("renders the menu and starts a run when already set up", async () => {
     seedProfile();
     render(<App />);
-    expect(screen.getByText(/5-Minute Rush/i)).toBeTruthy();
+    expect(screen.getAllByText(/5-Minute Mini/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/TestPlayer/)).toBeTruthy();
 
-    const start = await screen.findByRole("button", { name: /start rush/i });
+    const start = await screen.findByRole("button", { name: /5-minute mini rush/i });
     await vi.waitFor(() => {
       expect((start as HTMLButtonElement).disabled).toBe(false);
     });
@@ -86,7 +86,7 @@ describe("App", () => {
   it("pauses from the menu button and resumes", async () => {
     seedProfile();
     render(<App />);
-    const start = await screen.findByRole("button", { name: /start rush/i });
+    const start = await screen.findByRole("button", { name: /5-minute mini rush/i });
     await vi.waitFor(() => {
       expect((start as HTMLButtonElement).disabled).toBe(false);
     });
@@ -115,13 +115,13 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: /back/i }));
     window.location.hash = "";
     fireEvent(window, new Event("hashchange"));
-    expect(await screen.findByRole("button", { name: /start rush/i })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: /5-minute mini rush/i })).toBeTruthy();
   });
 
   it("offers to resume when an autosave exists", async () => {
     seedProfile();
     const first = render(<App />);
-    const start = await first.findByRole("button", { name: /start rush/i });
+    const start = await first.findByRole("button", { name: /5-minute mini rush/i });
     await vi.waitFor(() => {
       expect((start as HTMLButtonElement).disabled).toBe(false);
     });

@@ -356,6 +356,42 @@ describe("bag exhaustion", () => {
 });
 
 describe("replayJournal", () => {
+  it("replays a 10-minute classic run and rejects it under the mini config", () => {
+    const config = { durationSeconds: 600 as const };
+    let state = createRushRun("classic-replay-seed", 1000, config);
+    expect(state.boardSize).toBe(15);
+
+    // Classic center is (7,7).
+    state = place(state, 0, 7, 7);
+    state = place(state, 1, 7, 8);
+    const submitted = submitTurn(state, acceptAll, 450_000);
+    expect(submitted.ok).toBe(true);
+    if (!submitted.ok) return;
+    state = submitted.state;
+
+    // Same duration/mode: exact reconstruction.
+    const replay = replayJournal(
+      "classic-replay-seed",
+      state.journal,
+      acceptAll,
+      1000,
+      config
+    );
+    expect(replay.ok).toBe(true);
+    expect(replay.state?.wordPointsTotal).toBe(state.wordPointsTotal);
+    expect(replay.state?.boardSize).toBe(15);
+
+    // Wrong mode mapping (mini): different board/bag — must not validate.
+    const crossMode = replayJournal(
+      "classic-replay-seed",
+      state.journal,
+      acceptAll,
+      1000,
+      { durationSeconds: 300 }
+    );
+    expect(crossMode.ok).toBe(false);
+  });
+
   it("reconstructs a multi-turn run (submits + swap) exactly", () => {
     let state = createRushRun("seed-8", 1000);
     state = place(state, 0, 5, 5);

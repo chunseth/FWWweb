@@ -14,6 +14,29 @@ server-side with the same TS engine the browser runs.
 | `functions/submit-rush-run` | Ownership/deadline/one-shot checks → journal replay → authoritative score → better-score-wins → writes `rush_scores` (service role) |
 | `functions/_shared/engine.mjs` | Generated bundle of the shared engine + dictionary. Rebuild with `npm run build:functions` |
 
+## Troubleshooting: 404 on `/rest/v1/rpc/get_rush_leaderboard` or `get_rush_rank`
+
+A 404 from PostgREST means the function does not exist in the database with
+that name **and** those named arguments — i.e. the migrations were never
+applied to the live project (or an older one-argument version is applied
+while the client sends two arguments).
+
+Fastest fix, no CLI needed: open **Supabase Dashboard → SQL Editor**, paste
+the whole of [`setup_current.sql`](./setup_current.sql), and Run. It is
+idempotent (re-runnable) and creates `web_rush_runs`, both RPCs (with the
+`p_duration_seconds` parameter the client sends), and drops any stale
+one-argument overloads.
+
+CLI alternative:
+
+```sh
+supabase link --project-ref <your-project-ref>
+supabase db push
+```
+
+Then hard-refresh the app. The Edge Functions are separate: if
+`/functions/v1/create-rush-run` also 404s, deploy them (below).
+
 ## Deploy
 
 ```sh
