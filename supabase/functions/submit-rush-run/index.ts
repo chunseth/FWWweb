@@ -89,7 +89,10 @@ Deno.serve(async (req: Request) => {
       .select("id, player_id, seed, duration_seconds, started_at, deadline_at, status")
       .eq("id", runId)
       .maybeSingle();
-    if (runError) return json({ error: "internal" }, 500);
+    if (runError) {
+      console.error("submit-rush-run lookup failed", runError);
+      return json({ error: "internal" }, 500);
+    }
     if (!run) return json({ error: "run_not_found" }, 404);
     if (run.player_id !== playerId) return json({ error: "forbidden" }, 403);
     if (
@@ -136,11 +139,14 @@ Deno.serve(async (req: Request) => {
     const breakdown = buildCurrentBreakdown(finalState, elapsedMs);
 
     // --- Display name: profiles first, sanitized payload as fallback ------
-    const { data: profileRow } = await admin
+    const { data: profileRow, error: profileError } = await admin
       .from("profiles")
       .select("display_name, username")
       .eq("id", playerId)
       .maybeSingle();
+    if (profileError) {
+      console.error("submit-rush-run profile lookup failed", profileError);
+    }
     const resolvedName =
       sanitizeDisplayName(profileRow?.display_name) ??
       sanitizeDisplayName(profileRow?.username) ??
@@ -148,7 +154,7 @@ Deno.serve(async (req: Request) => {
       "Player";
 
     // --- Better-score-wins, enforced here and not in the client -----------
-    const { data: existingBest } = await admin
+    const { data: existingBest, error: existingBestError } = await admin
       .from("rush_scores")
       .select("id, final_score")
       .eq("player_id", playerId)
@@ -156,6 +162,10 @@ Deno.serve(async (req: Request) => {
       .order("final_score", { ascending: false })
       .limit(1)
       .maybeSingle();
+    if (existingBestError) {
+      console.error("submit-rush-run existing best lookup failed", existingBestError);
+      return json({ error: "internal" }, 500);
+    }
 
     const improved =
       !existingBest || breakdown.finalScore > existingBest.final_score;
@@ -179,9 +189,12 @@ Deno.serve(async (req: Request) => {
       },
       { onConflict: "player_id,seed,duration_seconds" }
     );
-    if (scoreError) return json({ error: "internal" }, 500);
+    if (scoreError) {
+      console.error("submit-rush-run score upsert failed", scoreError);
+      return json({ error: "internal" }, 500);
+    }
 
-    await admin
+    const { error: runUpdateError } = await admin
       .from("web_rush_runs")
       .update({
         status: "submitted",
@@ -190,6 +203,9 @@ Deno.serve(async (req: Request) => {
       })
       .eq("id", run.id)
       .eq("status", "active");
+    if (runUpdateError) {
+      console.error("submit-rush-run run update failed", runUpdateError);
+    }
 
     // Global rank of the player's current personal best (what the public
     // leaderboard actually shows for them).
@@ -213,7 +229,8 @@ Deno.serve(async (req: Request) => {
       personalBest,
       rank,
     });
-  } catch {
+  } catch (error) {
+    console.error("submit-rush-run unexpected failure", error);
     return json({ error: "internal" }, 500);
   }
 });

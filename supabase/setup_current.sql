@@ -3,10 +3,10 @@
 --
 -- Paste this whole file into the Supabase Dashboard -> SQL Editor -> Run.
 -- Idempotent: safe to re-run, and it also UPGRADES databases created before
--- classic mode (re-asserts the duration constraint that `create table if
--- not exists` cannot change). Equivalent to migrations 20260704090000,
--- 20260704090002, 20260704090003, and 20260704090004. The stage-2
--- rush_scores lockdown is intentionally NOT included.
+-- classic mode or six-digit seeds (re-asserts constraints that `create table
+-- if not exists` cannot change). Equivalent to migrations 20260704090000,
+-- 20260704090002, 20260704090003, 20260704090004, and 20260705180000. The
+-- stage-2 rush_scores lockdown is intentionally NOT included.
 -- ============================================================================
 
 -- Drop the original one-argument RPC overloads (pre-duration-tab versions).
@@ -159,3 +159,12 @@ alter table public.web_rush_runs
   add constraint web_rush_runs_duration_check
   check (duration_seconds in (300, 600));
 
+-- Rush seeds are six random digits (000000-999999). Databases created before
+-- that change may still reject seed values shorter than 8 characters.
+
+alter table public.web_rush_runs
+  drop constraint if exists web_rush_runs_seed_length_check;
+
+alter table public.web_rush_runs
+  add constraint web_rush_runs_seed_length_check
+  check (char_length(seed) between 6 and 64);

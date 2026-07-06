@@ -67,7 +67,10 @@ Deno.serve(async (req: Request) => {
       .select("id", { count: "exact", head: true })
       .eq("player_id", playerId)
       .gte("started_at", hourAgo);
-    if (countError) return json({ error: "internal" }, 500);
+    if (countError) {
+      console.error("create-rush-run count failed", countError);
+      return json({ error: "internal" }, 500);
+    }
     if ((count ?? 0) >= MAX_RUNS_PER_HOUR) {
       return json({ error: "rate_limited" }, 429);
     }
@@ -92,7 +95,10 @@ Deno.serve(async (req: Request) => {
       })
       .select("id")
       .single();
-    if (insertError || !run) return json({ error: "internal" }, 500);
+    if (insertError || !run) {
+      console.error("create-rush-run insert failed", insertError);
+      return json({ error: "internal" }, 500);
+    }
 
     return json({
       runId: run.id,
@@ -101,7 +107,8 @@ Deno.serve(async (req: Request) => {
       startedAt: startedAt.toISOString(),
       deadlineAt: deadlineAt.toISOString(),
     });
-  } catch {
+  } catch (error) {
+    console.error("create-rush-run unexpected failure", error);
     return json({ error: "internal" }, 500);
   }
 });

@@ -514,12 +514,6 @@ export const useRushGame = (
       return;
     }
 
-    // Mount immediately so rack, board, and timer reset while the server run loads.
-    mountFreshRun(generateRushSeed(), Date.now(), {
-      eligibility: "local_only",
-      runId: null,
-    });
-
     try {
       const server = await createRushRunOnServer(config);
       if (server) {
@@ -527,9 +521,17 @@ export const useRushGame = (
           runId: server.runId,
           eligibility: "eligible",
         });
+      } else {
+        mountFreshRun(generateRushSeed(), Date.now(), {
+          eligibility: "local_only",
+          runId: null,
+        });
       }
     } catch {
-      /* keep the optimistic local run */
+      mountFreshRun(generateRushSeed(), Date.now(), {
+        eligibility: "local_only",
+        runId: null,
+      });
     } finally {
       setStartingDuration(null);
     }

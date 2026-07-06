@@ -50,24 +50,31 @@ const ensureSession = async (supabase: SupabaseClient): Promise<boolean> => {
 
 export const createRushRunOnServer = async (
   config?: Partial<RushRunConfig>,
-  timeoutMs = 2500
+  timeoutMs = 8000
 ): Promise<ServerRun | null> => {
   const supabase = getSupabaseClient();
   if (!supabase) return null;
 
-  const attempt = (async (): Promise<ServerRun | null> => {
+  try {
     if (!(await ensureSession(supabase))) return null;
     const { data, error } = await supabase.functions.invoke("create-rush-run", {
       body: {
         durationSeconds: config?.durationSeconds,
         mode: config?.mode,
       },
+      timeout: timeoutMs,
     });
     if (
       error ||
       typeof data?.runId !== "string" ||
       !isRushSeed(data?.seed)
     ) {
+      console.warn("create-rush-run failed", {
+        error,
+        data,
+        durationSeconds: config?.durationSeconds,
+        mode: config?.mode,
+      });
       return null;
     }
     const startedAtMs = Date.parse(data.startedAt) || Date.now();
@@ -81,15 +88,12 @@ export const createRushRunOnServer = async (
       durationSeconds:
         typeof data.durationSeconds === "number" ? data.durationSeconds : 300,
     };
-  })();
-
-  const timeout = new Promise<null>((resolve) =>
-    setTimeout(() => resolve(null), timeoutMs)
-  );
-
-  try {
-    return await Promise.race([attempt, timeout]);
-  } catch {
+  } catch (error) {
+    console.warn("create-rush-run request failed", {
+      error,
+      durationSeconds: config?.durationSeconds,
+      mode: config?.mode,
+    });
     return null;
   }
 };
