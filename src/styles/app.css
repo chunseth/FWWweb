@@ -112,6 +112,14 @@ button:disabled {
   font-size: 16px;
 }
 
+.menu__seo-copy {
+  color: var(--text-dim);
+  max-width: 420px;
+  margin: -4px 20px 12px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
 .menu__bests {
   display: flex;
   flex-direction: column;

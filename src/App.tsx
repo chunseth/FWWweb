@@ -649,6 +649,10 @@ export const App = () => {
           <p className="menu__subtitle">
             5-Minute Mini or 10-Minute Classic
           </p>
+          <p className="menu__seo-copy">
+            Play solo Scrabble-style games in Friends With Words, a fast
+            single-player word game built for quick rounds and high scores.
+          </p>
           <div className="menu__bests">
             <p className="menu__best">
               5-Minute Mini best:{" "}
