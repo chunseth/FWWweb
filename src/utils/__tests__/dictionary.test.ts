@@ -26,6 +26,11 @@ describe("dictionary validation", () => {
     expect(dictionary.isValid("brokenly")).toBe(true);
     expect(dictionary.isValid("cleverly")).toBe(true);
     expect(dictionary.isValid("happier")).toBe(true);
+    expect(dictionary.isValid("happiest")).toBe(true);
+    expect(dictionary.isValid("largest")).toBe(true);
+    expect(dictionary.isValid("biggest")).toBe(true);
+    expect(dictionary.isValid("remotest")).toBe(true);
+    expect(dictionary.isValid("pricier")).toBe(true);
     expect(dictionary.isValid("happyer")).toBe(false);
     expect(dictionary.isValid("dryer")).toBe(true);
     expect(dictionary.isValid("fryer")).toBe(true);

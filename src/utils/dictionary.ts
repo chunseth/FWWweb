@@ -2582,6 +2582,8 @@ const VALID_IRREGULAR_ADJECTIVE_FORMS = new Set([
   "more",
   "eldest",    // old → elder, eldest (family)
   "elder",
+  "pricy",
+  "pricey",
 ]);
 
 export class Dictionary {
@@ -2791,6 +2793,22 @@ export class Dictionary {
 
     if (word.endsWith("ier") && word.length > 4) {
       return this.hasKnownBaseForm([`${word.slice(0, -3)}y`], word);
+    }
+
+    // Superlative forms ending in y use y -> iest (happy -> happiest).
+    if (word.endsWith("iest") && word.length > 5) {
+      return this.hasKnownBaseForm([`${word.slice(0, -4)}y`], word);
+    }
+
+    // Superlative -est supports silent-e drop (large -> largest) and
+    // doubled final consonants (big -> biggest).
+    if (word.endsWith("est") && word.length > 5) {
+      const base = word.slice(0, -3);
+      return this.hasKnownBaseForm([
+        base,
+        `${base}e`,
+        this.removeDoubledTrailingConsonant(base),
+      ], word, { allowSecondSuffixOnEnEr: true, suffix: "est" });
     }
 
     if (word.endsWith("er") && word.length > 4) {
